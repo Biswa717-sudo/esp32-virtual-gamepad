@@ -2,6 +2,8 @@
 
 Transform your ESP32 into a fully functional **Xbox 360 Controller** for PC! Play any modern PC game using your custom-built physical controller via Bluetooth or USB.
 
+![App Screenshot](app.png)
+
 
 ## ✨ Features
 * **Dual Connection Modes:** Connect over **Bluetooth** (DInput) or via **USB** (Serial).
