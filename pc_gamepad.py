@@ -1,7 +1,8 @@
 import pygame
 import vgamepad as vg
 import tkinter as tk
-from tkinter import ttk, messagebox
+import customtkinter as ctk
+from tkinter import messagebox
 import threading
 import time
 import serial
@@ -13,14 +14,19 @@ import pystray
 from PIL import Image, ImageDraw
 import urllib.request
 import json
+import ctypes
 
 BAUD_RATE = 115200
+
+# Set modern look
+ctk.set_appearance_mode("Dark")
+ctk.set_default_color_theme("blue")
 
 class X360CE_EmulatorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("ESP32 Virtual Gamepad")
-        self.root.geometry("550x700")
+        self.root.geometry("620x750")
         
         # Intercept close ('X') button to hide instead of quit
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
@@ -30,117 +36,141 @@ class X360CE_EmulatorApp:
         self.joystick = None
         self.ser = None
         
-        self.mode = tk.StringVar(value="Bluetooth") # "Bluetooth" or "USB"
+        self.mode = ctk.StringVar(value="Bluetooth") # "Bluetooth" or "USB"
         
-        # Initialize pygame for joystick reading
         try:
             pygame.init()
             pygame.joystick.init()
         except Exception as e:
             messagebox.showerror("Pygame Error", f"Failed to initialize pygame: {e}")
             
-        # UI Elements
-        tk.Label(root, text="Controller Emulator", font=("Helvetica", 16, "bold")).pack(pady=5)
+        # Title
+        title_lbl = ctk.CTkLabel(root, text="🎮 Controller Emulator", font=ctk.CTkFont(size=24, weight="bold"))
+        title_lbl.pack(pady=(15, 5))
         
         # Updates Section
-        frame_updates = tk.LabelFrame(root, text="Updates & Drivers")
-        frame_updates.pack(pady=5, fill=tk.X, padx=10)
-        tk.Button(frame_updates, text="Download / Update ViGEmBus Driver", command=self.update_vigembus).pack(side=tk.LEFT, padx=10, pady=5)
-        tk.Button(frame_updates, text="Check for App Updates", command=self.check_app_updates).pack(side=tk.RIGHT, padx=10, pady=5)
-
-        # Firmware Flashing Section
-        frame_flash = tk.LabelFrame(root, text="Hardware Setup (Flash ESP32)")
-        frame_flash.pack(pady=5, fill=tk.X, padx=10)
-        tk.Button(frame_flash, text="Flash USB Version", command=lambda: self.flash_firmware("wired")).pack(side=tk.LEFT, padx=30, pady=5)
-        tk.Button(frame_flash, text="Flash Bluetooth Version", command=lambda: self.flash_firmware("bluetooth")).pack(side=tk.RIGHT, padx=30, pady=5)
-
-        # Input Mode Toggle and COM Port Selector
-        frame_toggle = tk.LabelFrame(root, text="Emulator Input Mode")
-        frame_toggle.pack(pady=5, fill=tk.X, padx=10)
-        tk.Radiobutton(frame_toggle, text="Bluetooth (DInput)", variable=self.mode, value="Bluetooth", command=self.switch_mode).pack(side=tk.LEFT, padx=5, pady=2)
-        tk.Radiobutton(frame_toggle, text="USB", variable=self.mode, value="USB", command=self.switch_mode).pack(side=tk.LEFT, padx=5, pady=2)
+        frame_updates = ctk.CTkFrame(root)
+        frame_updates.pack(pady=10, fill="x", padx=20)
         
-        frame_com = tk.Frame(frame_toggle)
-        frame_com.pack(side=tk.RIGHT, padx=5)
-        self.com_var = tk.StringVar()
-        self.com_combo = ttk.Combobox(frame_com, textvariable=self.com_var, width=8)
-        self.com_combo.pack(side=tk.LEFT)
-        tk.Button(frame_com, text="↻", command=self.refresh_ports, width=2).pack(side=tk.LEFT)
+        ctk.CTkLabel(frame_updates, text="Updates & Drivers", font=ctk.CTkFont(weight="bold")).pack(pady=(5, 0))
+        btn_frame1 = ctk.CTkFrame(frame_updates, fg_color="transparent")
+        btn_frame1.pack(pady=10)
+        ctk.CTkButton(btn_frame1, text="Download / Update ViGEmBus", command=self.update_vigembus).pack(side="left", padx=10)
+        ctk.CTkButton(btn_frame1, text="Check for App Updates", command=self.check_app_updates).pack(side="right", padx=10)
+
+        # Hardware Setup Section
+        frame_flash = ctk.CTkFrame(root)
+        frame_flash.pack(pady=10, fill="x", padx=20)
+        
+        ctk.CTkLabel(frame_flash, text="Hardware Setup (Flash ESP32)", font=ctk.CTkFont(weight="bold")).pack(pady=(5, 0))
+        btn_frame2 = ctk.CTkFrame(frame_flash, fg_color="transparent")
+        btn_frame2.pack(pady=10)
+        ctk.CTkButton(btn_frame2, text="Flash USB Version", fg_color="#2b6b3e", hover_color="#215430", command=lambda: self.flash_firmware("wired")).pack(side="left", padx=10)
+        ctk.CTkButton(btn_frame2, text="Flash Bluetooth Version", fg_color="#a83232", hover_color="#822525", command=lambda: self.flash_firmware("bluetooth")).pack(side="right", padx=10)
+
+        # Input Mode Toggle
+        frame_toggle = ctk.CTkFrame(root)
+        frame_toggle.pack(pady=10, fill="x", padx=20)
+        
+        ctk.CTkLabel(frame_toggle, text="Emulator Input Mode", font=ctk.CTkFont(weight="bold")).pack(pady=(5, 0))
+        btn_frame3 = ctk.CTkFrame(frame_toggle, fg_color="transparent")
+        btn_frame3.pack(pady=10)
+        
+        ctk.CTkRadioButton(btn_frame3, text="Bluetooth (DInput)", variable=self.mode, value="Bluetooth", command=self.switch_mode).pack(side="left", padx=15)
+        ctk.CTkRadioButton(btn_frame3, text="USB", variable=self.mode, value="USB", command=self.switch_mode).pack(side="left", padx=15)
+        
+        self.com_var = ctk.StringVar()
+        self.com_combo = ctk.CTkOptionMenu(btn_frame3, variable=self.com_var, width=100)
+        self.com_combo.pack(side="left", padx=5)
+        ctk.CTkButton(btn_frame3, text="↻", width=30, command=self.refresh_ports).pack(side="left")
         self.refresh_ports()
         
+        # Mapping and Inversion container
+        container_map = ctk.CTkFrame(root, fg_color="transparent")
+        container_map.pack(pady=5, fill="x", padx=20)
+        
         # Button Mapping Section
-        frame_map = tk.LabelFrame(root, text="Button Mapping (Hardware index -> Xbox)")
-        frame_map.pack(pady=5, fill=tk.X, padx=10)
-        tk.Label(frame_map, text="A:").grid(row=0, column=0, padx=5, pady=2)
-        self.map_a = tk.Spinbox(frame_map, from_=0, to=31, width=3); self.map_a.grid(row=0, column=1, padx=5, pady=2)
-        self.map_a.delete(0, "end"); self.map_a.insert(0, "0")
-        tk.Label(frame_map, text="B:").grid(row=0, column=2, padx=5, pady=2)
-        self.map_b = tk.Spinbox(frame_map, from_=0, to=31, width=3); self.map_b.grid(row=0, column=3, padx=5, pady=2)
-        self.map_b.delete(0, "end"); self.map_b.insert(0, "1")
-        tk.Label(frame_map, text="X:").grid(row=0, column=4, padx=5, pady=2)
-        self.map_x = tk.Spinbox(frame_map, from_=0, to=31, width=3); self.map_x.grid(row=0, column=5, padx=5, pady=2)
-        self.map_x.delete(0, "end"); self.map_x.insert(0, "2")
-        tk.Label(frame_map, text="Y:").grid(row=0, column=6, padx=5, pady=2)
-        self.map_y = tk.Spinbox(frame_map, from_=0, to=31, width=3); self.map_y.grid(row=0, column=7, padx=5, pady=2)
-        self.map_y.delete(0, "end"); self.map_y.insert(0, "3")
+        frame_map = ctk.CTkFrame(container_map)
+        frame_map.pack(side="left", fill="both", expand=True, padx=(0, 5))
+        
+        ctk.CTkLabel(frame_map, text="Button Mapping", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, columnspan=4, pady=(5, 0))
+        
+        btns = [str(i) for i in range(32)]
+        
+        ctk.CTkLabel(frame_map, text="A:").grid(row=1, column=0, padx=5, pady=5)
+        self.map_a = ctk.CTkOptionMenu(frame_map, values=btns, width=60); self.map_a.grid(row=1, column=1, padx=5, pady=5); self.map_a.set("0")
+        
+        ctk.CTkLabel(frame_map, text="B:").grid(row=1, column=2, padx=5, pady=5)
+        self.map_b = ctk.CTkOptionMenu(frame_map, values=btns, width=60); self.map_b.grid(row=1, column=3, padx=5, pady=5); self.map_b.set("1")
+        
+        ctk.CTkLabel(frame_map, text="X:").grid(row=2, column=0, padx=5, pady=5)
+        self.map_x = ctk.CTkOptionMenu(frame_map, values=btns, width=60); self.map_x.grid(row=2, column=1, padx=5, pady=5); self.map_x.set("2")
+        
+        ctk.CTkLabel(frame_map, text="Y:").grid(row=2, column=2, padx=5, pady=5)
+        self.map_y = ctk.CTkOptionMenu(frame_map, values=btns, width=60); self.map_y.grid(row=2, column=3, padx=5, pady=5); self.map_y.set("3")
 
         # Joystick Inversion Section
-        frame_joy = tk.LabelFrame(root, text="Joystick Axis Inversion")
-        frame_joy.pack(pady=5, fill=tk.X, padx=10)
-        self.inv_lx = tk.BooleanVar(value=False)
-        self.inv_ly = tk.BooleanVar(value=True) 
-        self.inv_rx = tk.BooleanVar(value=False)
-        self.inv_ry = tk.BooleanVar(value=True)
-        tk.Checkbutton(frame_joy, text="Inv Left X", variable=self.inv_lx).grid(row=0, column=0, padx=5, pady=2)
-        tk.Checkbutton(frame_joy, text="Inv Left Y", variable=self.inv_ly).grid(row=0, column=1, padx=5, pady=2)
-        tk.Checkbutton(frame_joy, text="Inv Right X", variable=self.inv_rx).grid(row=0, column=2, padx=5, pady=2)
-        tk.Checkbutton(frame_joy, text="Inv Right Y", variable=self.inv_ry).grid(row=0, column=3, padx=5, pady=2)
+        frame_joy = ctk.CTkFrame(container_map)
+        frame_joy.pack(side="right", fill="both", expand=True, padx=(5, 0))
         
-        self.status_var = tk.StringVar()
+        ctk.CTkLabel(frame_joy, text="Joystick Inversion", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, columnspan=2, pady=(5, 0))
+        
+        self.inv_lx = ctk.BooleanVar(value=False)
+        self.inv_ly = ctk.BooleanVar(value=True) 
+        self.inv_rx = ctk.BooleanVar(value=False)
+        self.inv_ry = ctk.BooleanVar(value=True)
+        
+        ctk.CTkCheckBox(frame_joy, text="Inv Left X", variable=self.inv_lx).grid(row=1, column=0, padx=10, pady=5)
+        ctk.CTkCheckBox(frame_joy, text="Inv Left Y", variable=self.inv_ly).grid(row=1, column=1, padx=10, pady=5)
+        ctk.CTkCheckBox(frame_joy, text="Inv Right X", variable=self.inv_rx).grid(row=2, column=0, padx=10, pady=5)
+        ctk.CTkCheckBox(frame_joy, text="Inv Right Y", variable=self.inv_ry).grid(row=2, column=1, padx=10, pady=5)
+        
+        # Status
+        self.status_var = ctk.StringVar()
         self.status_var.set("Status: Ready.")
-        tk.Label(root, textvariable=self.status_var, font=("Helvetica", 10)).pack(pady=2)
+        ctk.CTkLabel(root, textvariable=self.status_var, font=("Helvetica", 12)).pack(pady=2)
         
-        self.device_var = tk.StringVar()
+        self.device_var = ctk.StringVar()
         self.device_var.set("Device: None")
-        tk.Label(root, textvariable=self.device_var, font=("Helvetica", 10), fg="blue").pack(pady=2)
+        ctk.CTkLabel(root, textvariable=self.device_var, font=("Helvetica", 12), text_color="#1f6aa5").pack(pady=2)
         
-        self.emulation_status = tk.StringVar()
+        self.emulation_status = ctk.StringVar()
         self.emulation_status.set("Emulator OFF")
-        self.lbl_emu = tk.Label(root, textvariable=self.emulation_status, font=("Helvetica", 12, "bold"), fg="red")
+        self.lbl_emu = ctk.CTkLabel(root, textvariable=self.emulation_status, font=("Helvetica", 16, "bold"), text_color="#a83232")
         self.lbl_emu.pack(pady=2)
         
         # Canvas for visualizing inputs
-        self.canvas = tk.Canvas(root, width=400, height=150, bg="#e0e0e0")
-        self.canvas.pack(pady=5)
+        self.canvas = tk.Canvas(root, width=400, height=150, bg="#2b2b2b", highlightthickness=0)
+        self.canvas.pack(pady=10)
         
         # Left Joy
-        self.canvas.create_text(100, 20, text="Left Joystick")
+        self.canvas.create_text(100, 20, text="Left Joystick", fill="white", font=("Helvetica", 10, "bold"))
         self.joy_l_bg = self.canvas.create_oval(70, 40, 130, 100, outline="gray", width=2)
-        self.joy_l_dot = self.canvas.create_oval(95, 65, 105, 75, fill="red")
+        self.joy_l_dot = self.canvas.create_oval(95, 65, 105, 75, fill="#a83232")
         
         # Right Joy
-        self.canvas.create_text(300, 20, text="Right Joystick")
+        self.canvas.create_text(300, 20, text="Right Joystick", fill="white", font=("Helvetica", 10, "bold"))
         self.joy_r_bg = self.canvas.create_oval(270, 40, 330, 100, outline="gray", width=2)
-        self.joy_r_dot = self.canvas.create_oval(295, 65, 305, 75, fill="blue")
+        self.joy_r_dot = self.canvas.create_oval(295, 65, 305, 75, fill="#1f6aa5")
         
         # Buttons indicators
-        self.btn_a_ind = self.canvas.create_oval(180, 50, 200, 70, fill="white")
-        self.canvas.create_text(190, 60, text="A")
+        self.btn_a_ind = self.canvas.create_oval(180, 50, 200, 70, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(190, 60, text="A", fill="white")
         
-        self.btn_b_ind = self.canvas.create_oval(210, 50, 230, 70, fill="white")
-        self.canvas.create_text(220, 60, text="B")
+        self.btn_b_ind = self.canvas.create_oval(210, 50, 230, 70, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(220, 60, text="B", fill="white")
         
-        self.btn_x_ind = self.canvas.create_oval(180, 80, 200, 100, fill="white")
-        self.canvas.create_text(190, 90, text="X")
+        self.btn_x_ind = self.canvas.create_oval(180, 80, 200, 100, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(190, 90, text="X", fill="white")
         
-        self.btn_y_ind = self.canvas.create_oval(210, 80, 230, 100, fill="white")
-        self.canvas.create_text(220, 90, text="Y")
+        self.btn_y_ind = self.canvas.create_oval(210, 80, 230, 100, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(220, 90, text="Y", fill="white")
         
         # Virtual Gamepad
         try:
             self.gamepad = vg.VX360Gamepad()
             self.emulation_status.set("Emulator ON (Virtual Xbox 360)")
-            self.lbl_emu.config(fg="green")
+            self.lbl_emu.configure(text_color="#2b6b3e")
         except Exception as e:
             self.status_var.set(f"Status: Missing ViGEmBus! Click Update Driver.")
             self.gamepad = None
@@ -191,20 +221,23 @@ class X360CE_EmulatorApp:
         threading.Thread(target=task, daemon=True).start()
 
     def check_app_updates(self):
-        # Placeholder for checking App updates
         messagebox.showinfo("Updater", "Checking for updates...\n\nYou are currently running the latest version of ESP32 Virtual Gamepad!")
 
     def refresh_ports(self):
         ports = [port.device for port in serial.tools.list_ports.comports()]
-        self.com_combo['values'] = ports
-        if ports and not self.com_var.get():
-            self.com_combo.current(0)
+        if ports:
+            self.com_combo.configure(values=ports)
+            if not self.com_var.get() or self.com_var.get() not in ports:
+                self.com_combo.set(ports[0])
+        else:
+            self.com_combo.configure(values=["No COM Ports"])
+            self.com_combo.set("No COM Ports")
 
     def setup_tray(self):
         def create_image():
             width = 64
             height = 64
-            color1 = (50, 150, 250)
+            color1 = (31, 106, 165)
             color2 = (255, 255, 255)
             image = Image.new('RGB', (width, height), color1)
             dc = ImageDraw.Draw(image)
@@ -223,6 +256,8 @@ class X360CE_EmulatorApp:
         
     def show_window(self, icon=None, item=None):
         self.root.after(0, self.root.deiconify)
+        self.root.after(0, lambda: self.root.attributes("-topmost", True))
+        self.root.after(100, lambda: self.root.attributes("-topmost", False))
         
     def quit_app(self, icon=None, item=None):
         self.tray_icon.stop()
@@ -298,10 +333,10 @@ class X360CE_EmulatorApp:
         self.canvas.coords(self.joy_l_dot, 95 + lx*30, 65 + ly*30, 105 + lx*30, 75 + ly*30)
         self.canvas.coords(self.joy_r_dot, 295 + rx*30, 65 + ry*30, 305 + rx*30, 75 + ry*30)
         
-        self.canvas.itemconfig(self.btn_a_ind, fill="green" if btns.get('A') else "white")
-        self.canvas.itemconfig(self.btn_b_ind, fill="red" if btns.get('B') else "white")
-        self.canvas.itemconfig(self.btn_x_ind, fill="blue" if btns.get('X') else "white")
-        self.canvas.itemconfig(self.btn_y_ind, fill="yellow" if btns.get('Y') else "white")
+        self.canvas.itemconfig(self.btn_a_ind, fill="#2b6b3e" if btns.get('A') else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_b_ind, fill="#a83232" if btns.get('B') else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_x_ind, fill="#1f6aa5" if btns.get('X') else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_y_ind, fill="#b59c2a" if btns.get('Y') else "#2b2b2b")
 
     def get_mappings(self):
         try:
@@ -403,7 +438,7 @@ class X360CE_EmulatorApp:
             
     def run_usb_cycle(self):
         port = self.com_var.get()
-        if not port:
+        if not port or port == "No COM Ports":
             time.sleep(1)
             return
             
@@ -467,6 +502,14 @@ class X360CE_EmulatorApp:
             self.root.after(0, lambda: self.device_var.set("Device: None"))
 
 if __name__ == "__main__":
-    root = tk.Tk()
+    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Global\\ESP32_Virtual_Gamepad_Mutex")
+    if ctypes.windll.kernel32.GetLastError() == 183:
+        sys.exit(0)
+
+    root = ctk.CTk()
     app = X360CE_EmulatorApp(root)
+    
+    if "--minimized" in sys.argv:
+        app.hide_window()
+        
     root.mainloop()
