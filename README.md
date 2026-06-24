@@ -2,7 +2,6 @@
 
 Transform your ESP32 into a fully functional **Xbox 360 Controller** for PC! Play any modern PC game using your custom-built physical controller via Bluetooth or USB.
 
-![Screenshot 1](screenshot1.png)
 
 ## ✨ Features
 * **Dual Connection Modes:** Connect over **Bluetooth** (DInput) or via **USB** (Serial).
@@ -18,5 +17,3 @@ Transform your ESP32 into a fully functional **Xbox 360 Controller** for PC! Pla
 2. Run the installer to automatically set up the app on your computer.
 3. Open the app, click **"Download / Update ViGEmBus Driver"**, and run the automatic driver installer. *(This creates the virtual Xbox controller inside Windows).*
 4. Connect your ESP32 via Bluetooth or select your USB port, and start gaming!
-
-![Screenshot 2](screenshot2.png)
