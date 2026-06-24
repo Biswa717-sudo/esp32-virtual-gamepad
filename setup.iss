@@ -1,6 +1,6 @@
 [Setup]
 AppName=ESP32 Virtual Gamepad
-AppVersion=1.0
+AppVersion=2.0
 DefaultDirName={autopf}\ESP32 Virtual Gamepad
 DefaultGroupName=ESP32 Virtual Gamepad
 OutputDir=D:\gamepad\Installer
@@ -11,12 +11,12 @@ ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=lowest
 
 [Files]
-Source: "D:\gamepad\dist\pc_gamepad.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "D:\gamepad\dist\pc_gamepad\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\ESP32 Virtual Gamepad"; Filename: "{app}\pc_gamepad.exe"
 Name: "{autodesktop}\ESP32 Virtual Gamepad"; Filename: "{app}\pc_gamepad.exe"; Tasks: desktopicon
-Name: "{userstartup}\ESP32 Virtual Gamepad"; Filename: "{app}\pc_gamepad.exe"; Tasks: startupicon
+Name: "{userstartup}\ESP32 Virtual Gamepad"; Filename: "{app}\pc_gamepad.exe"; Parameters: "--minimized"; Tasks: startupicon
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
