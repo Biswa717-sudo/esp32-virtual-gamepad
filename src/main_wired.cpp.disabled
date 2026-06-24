@@ -1,0 +1,103 @@
+#include <Arduino.h>
+
+// Define pin numbers (Suitable for ESP32 30-pin)
+const int PIN_JOY_X = 32;
+const int PIN_JOY_Y = 33;
+const int PIN_JOY_BTN = 25;
+
+const int PIN_BTN_A = 12;
+const int PIN_BTN_B = 27;
+const int PIN_BTN_X = 14;
+const int PIN_BTN_Y = 26;
+
+const int PIN_LED_RED = 18;
+const int PIN_LED_BLUE = 19;
+
+// Joystick calibration variables
+int joyCenterX = 2048;
+int joyCenterY = 2048;
+const int JOY_DEADZONE = 200;
+
+const unsigned long UPDATE_INTERVAL = 10;
+unsigned long lastUpdate = 0;
+
+void setup() {
+    Serial.begin(115200);
+
+    // Setup digital pins with internal pull-ups
+    pinMode(PIN_BTN_A, INPUT_PULLUP);
+    pinMode(PIN_BTN_B, INPUT_PULLUP);
+    pinMode(PIN_BTN_X, INPUT_PULLUP);
+    pinMode(PIN_BTN_Y, INPUT_PULLUP);
+    pinMode(PIN_JOY_BTN, INPUT_PULLUP);
+
+    // Setup LED pins
+    pinMode(PIN_LED_RED, OUTPUT);
+    pinMode(PIN_LED_BLUE, OUTPUT);
+    
+    // USB Mode indicator: Blue DIM, Red OFF
+    digitalWrite(PIN_LED_RED, LOW);
+    analogWrite(PIN_LED_BLUE, 1);
+
+    delay(100);
+
+    // Calibrate joystick center
+    long sumX = 0;
+    long sumY = 0;
+    const int numSamples = 50;
+
+    for (int i = 0; i < numSamples; i++) {
+        sumX += analogRead(PIN_JOY_X);
+        sumY += analogRead(PIN_JOY_Y);
+        delay(5);
+    }
+
+    joyCenterX = sumX / numSamples;
+    joyCenterY = sumY / numSamples;
+
+    if (joyCenterX < 1500 || joyCenterX > 2500) joyCenterX = 2048;
+    if (joyCenterY < 1500 || joyCenterY > 2500) joyCenterY = 2048;
+    
+    Serial.println("USB Serial Gamepad Started");
+}
+
+int16_t processBipolarAxis(int rawVal, int centerVal, bool invert, int deadzone) {
+    if (invert) {
+        rawVal = 4095 - rawVal;
+        centerVal = 4095 - centerVal;
+    }
+    int diff = rawVal - centerVal;
+    if (abs(diff) <= deadzone) {
+        return 0; // Inside deadzone
+    }
+    if (diff > 0) {
+        long mapped = (long)(diff - deadzone) * 32767 / (4095 - centerVal - deadzone);
+        return (int16_t)constrain(mapped, 0, 32767);
+    } else {
+        long mapped = (long)(diff + deadzone) * 32767 / (centerVal - deadzone);
+        return (int16_t)constrain(mapped, -32767, 0);
+    }
+}
+
+void loop() {
+    unsigned long currentMillis = millis();
+    if (currentMillis - lastUpdate >= UPDATE_INTERVAL) {
+        lastUpdate = currentMillis;
+
+        int rawX = analogRead(PIN_JOY_X);
+        int rawY = analogRead(PIN_JOY_Y);
+
+        bool stateA = (digitalRead(PIN_BTN_A) == LOW);
+        bool stateB = (digitalRead(PIN_BTN_B) == LOW);
+        bool stateX = (digitalRead(PIN_BTN_X) == LOW);
+        bool stateY = (digitalRead(PIN_BTN_Y) == LOW);
+        bool stateJoyBtn = (digitalRead(PIN_JOY_BTN) == LOW);
+
+        int16_t mappedX = processBipolarAxis(rawX, joyCenterX, false, JOY_DEADZONE);
+        int16_t mappedY = processBipolarAxis(rawY, joyCenterY, true, JOY_DEADZONE);
+
+        // Print over serial so Python can read it
+        Serial.printf("X:%d,Y:%d,A:%d,B:%d,XBTN:%d,YBTN:%d,JBTN:%d\n",
+                      mappedX, mappedY, stateA, stateB, stateX, stateY, stateJoyBtn);
+    }
+}

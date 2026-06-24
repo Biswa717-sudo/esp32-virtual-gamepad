@@ -1,0 +1,17 @@
+# PlatformIO
+.pio/
+
+# Python / PyInstaller
+__pycache__/
+build/
+dist/
+*.spec
+
+# Installers and Executables
+Installer/
+*.exe
+*.msi
+
+# OS files
+.DS_Store
+Thumbs.db
