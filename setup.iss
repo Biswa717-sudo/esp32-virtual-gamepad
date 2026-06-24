@@ -24,3 +24,12 @@ Name: "startupicon"; Description: "Run automatically when Windows starts"; Group
 
 [Run]
 Filename: "{app}\pc_gamepad.exe"; Description: "Launch Virtual Gamepad now"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Exec('taskkill.exe', '/F /IM pc_gamepad.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := True;
+end;
