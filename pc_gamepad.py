@@ -808,26 +808,8 @@ class X360CE_EmulatorApp:
             self.root.after(0, lambda: self.device_var.set("Device: None"))
             return False
 
-def create_image():
-    from PIL import Image, ImageDraw
-    image = Image.new('RGB', (64, 64), color = (30, 30, 30))
-    d = ImageDraw.Draw(image)
-    d.text((10,25), "ESP32", fill=(255,255,255))
-    return image
-
-def setup_tray(app):
-    import pystray
-    image = create_image()
-    menu = pystray.Menu(
-        pystray.MenuItem('Show', lambda icon, item: app.show_window()), 
-        pystray.MenuItem('Quit', lambda icon, item: app.quit_app())
-    )
-    app.icon = pystray.Icon("gamepad", image, "ESP32 Virtual Gamepad", menu)
-    app.icon.run_detached()
-
 if __name__ == "__main__":
     import customtkinter as ctk
     root = ctk.CTk()
     app = X360CE_EmulatorApp(root)
-    setup_tray(app)
     root.mainloop()
