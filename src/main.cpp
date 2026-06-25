@@ -19,6 +19,12 @@ const int PIN_BTN_B = 27;
 const int PIN_BTN_X = 14;
 const int PIN_BTN_Y = 12;
 
+// Shoulder Buttons & Triggers
+const int PIN_BTN_LB = 23;
+const int PIN_BTN_RB = 21;
+const int PIN_BTN_LT = 22;
+const int PIN_BTN_RT = 4;
+
 // Status LEDs
 const int PIN_LED_RED = 18;
 const int PIN_LED_BLUE = 19;
@@ -33,7 +39,19 @@ bool btnAPressed = false;
 bool btnBPressed = false;
 bool btnXPressed = false;
 bool btnYPressed = false;
+bool btnLBPressed = false;
+bool btnRBPressed = false;
+bool btnLTPressed = false;
+bool btnRTPressed = false;
 bool btnJoyPressed = false;
+
+// Trigger time-based simulation variables
+int triggerLTValue = 0; // 0 to 255
+int triggerRTValue = 0; // 0 to 255
+unsigned long lastLTRampTime = 0;
+unsigned long lastRTRampTime = 0;
+unsigned long rampUpDelay = 5;   // ms per step
+unsigned long rampDownDelay = 3; // ms per step
 
 // Update interval (in milliseconds)
 const unsigned long UPDATE_INTERVAL = 10;
@@ -52,6 +70,10 @@ void setup() {
     pinMode(PIN_BTN_B, INPUT_PULLUP);
     pinMode(PIN_BTN_X, INPUT_PULLUP);
     pinMode(PIN_BTN_Y, INPUT_PULLUP);
+    pinMode(PIN_BTN_LB, INPUT_PULLUP);
+    pinMode(PIN_BTN_RB, INPUT_PULLUP);
+    pinMode(PIN_BTN_LT, INPUT_PULLUP);
+    pinMode(PIN_BTN_RT, INPUT_PULLUP);
     pinMode(PIN_JOY_BTN, INPUT_PULLUP);
 
     // Setup LED pins
@@ -153,6 +175,35 @@ void loop() {
     }
 
     unsigned long currentMillis = millis();
+
+    // Process Time-Based Analog Triggers (Non-blocking, runs every loop iteration)
+    bool stateLT = (digitalRead(PIN_BTN_LT) == LOW);
+    bool stateRT = (digitalRead(PIN_BTN_RT) == LOW);
+
+    if (stateLT) {
+        if (currentMillis - lastLTRampTime >= rampUpDelay) {
+            if (triggerLTValue < 255) triggerLTValue++;
+            lastLTRampTime = currentMillis;
+        }
+    } else {
+        if (currentMillis - lastLTRampTime >= rampDownDelay) {
+            if (triggerLTValue > 0) triggerLTValue--;
+            lastLTRampTime = currentMillis;
+        }
+    }
+
+    if (stateRT) {
+        if (currentMillis - lastRTRampTime >= rampUpDelay) {
+            if (triggerRTValue < 255) triggerRTValue++;
+            lastRTRampTime = currentMillis;
+        }
+    } else {
+        if (currentMillis - lastRTRampTime >= rampDownDelay) {
+            if (triggerRTValue > 0) triggerRTValue--;
+            lastRTRampTime = currentMillis;
+        }
+    }
+
     if (currentMillis - lastUpdate >= UPDATE_INTERVAL) {
         lastUpdate = currentMillis;
 
@@ -165,6 +216,8 @@ void loop() {
         bool stateB = (digitalRead(PIN_BTN_B) == LOW);
         bool stateX = (digitalRead(PIN_BTN_X) == LOW);
         bool stateY = (digitalRead(PIN_BTN_Y) == LOW);
+        bool stateLB = (digitalRead(PIN_BTN_LB) == LOW);
+        bool stateRB = (digitalRead(PIN_BTN_RB) == LOW);
         bool stateJoyBtn = (digitalRead(PIN_JOY_BTN) == LOW);
 
         // Process analog axes
@@ -176,12 +229,22 @@ void loop() {
         bleGamepad.setX(mappedX);
         bleGamepad.setY(mappedY);
 
-        // Update buttons (Mapping to standard buttons 1 to 5)
+        // Map 0-255 trigger values to -32767 to 32767 for BleGamepad
+        int16_t bleLT = map(triggerLTValue, 0, 255, -32767, 32767);
+        int16_t bleRT = map(triggerRTValue, 0, 255, -32767, 32767);
+        bleGamepad.setLeftTrigger(bleLT);
+        bleGamepad.setRightTrigger(bleRT);
+
+        // Update buttons (Mapping to standard buttons)
         updateButton(BUTTON_1, stateA, btnAPressed);
         updateButton(BUTTON_2, stateB, btnBPressed);
         updateButton(BUTTON_3, stateX, btnXPressed);
         updateButton(BUTTON_4, stateY, btnYPressed);
-        updateButton(BUTTON_5, stateJoyBtn, btnJoyPressed); // Usually mapped to thumb click
+        updateButton(BUTTON_5, stateLB, btnLBPressed);
+        updateButton(BUTTON_6, stateRB, btnRBPressed);
+        updateButton(BUTTON_7, stateLT, btnLTPressed);
+        updateButton(BUTTON_8, stateRT, btnRTPressed);
+        updateButton(BUTTON_11, stateJoyBtn, btnJoyPressed); // Usually mapped to left thumb click (L3)
 
         // Send the complete report to the host
         bleGamepad.sendReport();

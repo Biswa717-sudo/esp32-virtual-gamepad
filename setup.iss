@@ -1,6 +1,6 @@
 [Setup]
 AppName=ESP32 Virtual Gamepad
-AppVersion=2.0
+AppVersion=2.1
 DefaultDirName={autopf}\ESP32 Virtual Gamepad
 DefaultGroupName=ESP32 Virtual Gamepad
 OutputDir=D:\gamepad\Installer

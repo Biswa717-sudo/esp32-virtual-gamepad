@@ -5,6 +5,11 @@ import customtkinter as ctk
 from tkinter import messagebox
 import threading
 import time
+import requests
+import tempfile
+import subprocess
+import threading
+from tkinter import messagebox
 import serial
 import serial.tools.list_ports
 import subprocess
@@ -22,21 +27,139 @@ BAUD_RATE = 115200
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
 
+
+class DraggableGraph(tk.Canvas):
+    def __init__(self, parent, width=250, height=150, **kwargs):
+        super().__init__(parent, width=width, height=height, bg="#1e1e1e", highlightthickness=1, highlightbackground="gray", **kwargs)
+        self.width = width
+        self.height = height
+        # 4 points: start, mid1, mid2, end
+        self.points = [(0, height), (width//3, 2*height//3), (2*width//3, height//3), (width, 0)]
+        self.selected_point = None
+        self.max_time = 1000
+        self.bind("<Button-1>", self.on_click)
+        self.bind("<B1-Motion>", self.on_drag)
+        self.bind("<ButtonRelease-1>", self.on_release)
+        self.draw()
+
+    def draw(self):
+        self.delete("all")
+        for i in range(0, self.width, 50): self.create_line(i, 0, i, self.height, fill="#333333")
+        for i in range(0, self.height, 50): self.create_line(0, i, self.width, i, fill="#333333")
+        coords = []
+        for x, y in self.points: coords.extend([x, y])
+        self.create_line(coords, fill="#a83232", width=3)
+        for i, (x, y) in enumerate(self.points):
+            self.create_oval(x-6, y-6, x+6, y+6, fill="#ffffff" if i > 0 and i < len(self.points)-1 else "#888888")
+        self.create_text(5, self.height-5, text="0ms", fill="white", anchor="sw")
+        self.create_text(self.width-5, self.height-5, text=f"{self.max_time}ms", fill="white", anchor="se")
+        self.create_text(5, 5, text="100%", fill="white", anchor="nw")
+
+    def on_click(self, event):
+        for i, (px, py) in enumerate(self.points):
+            if i > 0 and i < len(self.points)-1 and abs(event.x - px) < 15 and abs(event.y - py) < 15:
+                self.selected_point = i
+                break
+
+    def on_drag(self, event):
+        if self.selected_point:
+            # Constrain X dynamically so points never cross each other
+            min_x = self.points[self.selected_point - 1][0]
+            max_x = self.points[self.selected_point + 1][0]
+            x = max(min_x, min(max_x, event.x))
+            y = max(0, min(self.height, event.y))
+            self.points[self.selected_point] = (x, y)
+            self.draw()
+
+    def on_release(self, event): self.selected_point = None
+        
+    def get_pressure(self, current_time):
+        if current_time >= self.max_time: return 1.0
+        if current_time <= 0: return 0.0
+        xt = (current_time / self.max_time) * self.width
+        if xt <= self.points[0][0]: return 1.0 - (self.points[0][1]/self.height)
+        
+        for i in range(len(self.points)-1):
+            p0, p1 = self.points[i], self.points[i+1]
+            if p0[0] <= xt <= p1[0]:
+                if p1[0] == p0[0]: return 1.0 - (p1[1]/self.height)
+                t = (xt - p0[0]) / (p1[0] - p0[0])
+                y = p0[1] + t * (p1[1] - p0[1])
+                return max(0.0, min(1.0, 1.0 - (y / self.height)))
+        return 1.0
+
+APP_VERSION = "2.1"
+
 class X360CE_EmulatorApp:
+    
+    def check_for_updates(self):
+        def _check():
+            try:
+                response = requests.get("https://api.github.com/repos/Biswa717-sudo/esp32-virtual-gamepad/releases/latest", timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    latest_version = data["tag_name"].replace("v", "")
+                    if latest_version != APP_VERSION:
+                        # Found update!
+                        for asset in data.get("assets", []):
+                            if asset["name"].endswith(".exe"):
+                                download_url = asset["browser_download_url"]
+                                self.root.after(0, lambda: self.prompt_update(latest_version, download_url))
+                                break
+            except:
+                pass
+        threading.Thread(target=_check, daemon=True).start()
+
+    def prompt_update(self, version, url):
+        if messagebox.askyesno("Update Available", f"Version {version} is available! Do you want to download and install it now?"):
+            self.download_update(url)
+
+    def download_update(self, url):
+        win = ctk.CTkToplevel(self.root)
+        win.title("Downloading Update")
+        win.geometry("300x100")
+        win.attributes("-topmost", True)
+        label = ctk.CTkLabel(win, text="Downloading... Please wait.")
+        label.pack(pady=20)
+        
+        def _download():
+            try:
+                response = requests.get(url, stream=True)
+                installer_path = os.path.join(tempfile.gettempdir(), "ESP32_Gamepad_Setup_Update.exe")
+                with open(installer_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                
+                # Run the installer silently and kill the current app
+                subprocess.Popen([installer_path, "/SILENT"])
+                self.root.after(0, self.quit_app)
+            except Exception as e:
+                self.root.after(0, lambda: label.configure(text=f"Download failed! {str(e)}"))
+                
+        threading.Thread(target=_download, daemon=True).start()
+
     def __init__(self, root):
         self.root = root
-        self.root.title("ESP32 Virtual Gamepad")
+        self.root.title(f"ESP32 Virtual Gamepad v{APP_VERSION}")
         self.root.geometry("620x750")
         
         # Intercept close ('X') button to hide instead of quit
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
         
         self.running = True
+        self.check_for_updates()
         self.gamepad = None
         self.joystick = None
         self.ser = None
         
-        self.mode = ctk.StringVar(value="Bluetooth") # "Bluetooth" or "USB"
+        self.mode = ctk.StringVar(value="Bluetooth")
+        self.use_pc_simulation = ctk.BooleanVar(value=True)
+        self.lt_time = 0.0
+        self.rt_time = 0.0
+        self.last_update_time = time.time()
+        self.lt_graph = None
+        self.rt_graph = None
+ # "Bluetooth" or "USB"
         
         try:
             pygame.init()
@@ -84,6 +207,10 @@ class X360CE_EmulatorApp:
         self.com_combo.pack(side="left", padx=5)
         ctk.CTkButton(btn_frame3, text="↻", width=30, command=self.refresh_ports).pack(side="left")
         self.refresh_ports()
+
+        # Graph Editor Button
+        ctk.CTkButton(btn_frame3, text="Open Curve Editor", command=self.open_curve_editor, fg_color="#1f6aa5").pack(side="left", padx=10)
+
         
         # Mapping and Inversion container
         container_map = ctk.CTkFrame(root, fg_color="transparent")
@@ -108,6 +235,12 @@ class X360CE_EmulatorApp:
         
         ctk.CTkLabel(frame_map, text="Y:").grid(row=2, column=2, padx=5, pady=5)
         self.map_y = ctk.CTkOptionMenu(frame_map, values=btns, width=60); self.map_y.grid(row=2, column=3, padx=5, pady=5); self.map_y.set("3")
+
+        ctk.CTkLabel(frame_map, text="LB:").grid(row=3, column=0, padx=5, pady=5)
+        self.map_lb = ctk.CTkOptionMenu(frame_map, values=btns, width=60); self.map_lb.grid(row=3, column=1, padx=5, pady=5); self.map_lb.set("4")
+        
+        ctk.CTkLabel(frame_map, text="RB:").grid(row=3, column=2, padx=5, pady=5)
+        self.map_rb = ctk.CTkOptionMenu(frame_map, values=btns, width=60); self.map_rb.grid(row=3, column=3, padx=5, pady=5); self.map_rb.set("5")
 
         # Joystick Inversion Section
         frame_joy = ctk.CTkFrame(container_map)
@@ -165,6 +298,21 @@ class X360CE_EmulatorApp:
         
         self.btn_y_ind = self.canvas.create_oval(210, 80, 230, 100, fill="#2b2b2b", outline="gray")
         self.canvas.create_text(220, 90, text="Y", fill="white")
+        
+        self.btn_lb_ind = self.canvas.create_oval(150, 50, 170, 70, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(160, 60, text="LB", fill="white")
+        
+        self.btn_rb_ind = self.canvas.create_oval(240, 50, 260, 70, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(250, 60, text="RB", fill="white")
+        
+        # Triggers indicators
+        self.canvas.create_text(30, 20, text="LT", fill="white", font=("Helvetica", 10, "bold"))
+        self.lt_bg = self.canvas.create_rectangle(20, 40, 40, 100, outline="gray", width=2)
+        self.lt_fill = self.canvas.create_rectangle(20, 100, 40, 100, fill="#a83232")
+
+        self.canvas.create_text(370, 20, text="RT", fill="white", font=("Helvetica", 10, "bold"))
+        self.rt_bg = self.canvas.create_rectangle(360, 40, 380, 100, outline="gray", width=2)
+        self.rt_fill = self.canvas.create_rectangle(360, 100, 380, 100, fill="#1f6aa5")
         
         # Virtual Gamepad
         try:
@@ -329,7 +477,7 @@ class X360CE_EmulatorApp:
         else:
             self.status_var.set("Status: Looking for physical controller...")
         
-    def update_ui(self, lx, ly, rx, ry, btns):
+    def update_ui(self, lx, ly, rx, ry, btns, lt_val=0.0, rt_val=0.0):
         self.canvas.coords(self.joy_l_dot, 95 + lx*30, 65 + ly*30, 105 + lx*30, 75 + ly*30)
         self.canvas.coords(self.joy_r_dot, 295 + rx*30, 65 + ry*30, 305 + rx*30, 75 + ry*30)
         
@@ -337,6 +485,61 @@ class X360CE_EmulatorApp:
         self.canvas.itemconfig(self.btn_b_ind, fill="#a83232" if btns.get('B') else "#2b2b2b")
         self.canvas.itemconfig(self.btn_x_ind, fill="#1f6aa5" if btns.get('X') else "#2b2b2b")
         self.canvas.itemconfig(self.btn_y_ind, fill="#b59c2a" if btns.get('Y') else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_lb_ind, fill="#2b6b3e" if btns.get('LB') else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_rb_ind, fill="#2b6b3e" if btns.get('RB') else "#2b2b2b")
+        
+        lt_val = max(0.0, min(1.0, lt_val))
+        rt_val = max(0.0, min(1.0, rt_val))
+        self.canvas.coords(self.lt_fill, 20, 100 - (lt_val * 60), 40, 100)
+        self.canvas.coords(self.rt_fill, 360, 100 - (rt_val * 60), 380, 100)
+
+    
+    def open_curve_editor(self):
+        win = ctk.CTkToplevel(self.root)
+        win.title("Trigger Curve Editor")
+        win.geometry("600x400")
+        win.attributes("-topmost", True)
+        
+        ctk.CTkSwitch(win, text="Use PC Curve Simulation (Ignores ESP32 linear scaling)", variable=self.use_pc_simulation).pack(pady=10)
+        
+        frame = ctk.CTkFrame(win, fg_color="transparent")
+        frame.pack(fill="both", expand=True, padx=10)
+        
+        lf = ctk.CTkFrame(frame)
+        lf.pack(side="left", expand=True, fill="both", padx=5)
+        ctk.CTkLabel(lf, text="Left Trigger (LT)").pack()
+        if not self.lt_graph: self.lt_graph = DraggableGraph(lf, width=250, height=150)
+        else:
+            old_pts = self.lt_graph.points; old_max = self.lt_graph.max_time
+            self.lt_graph = DraggableGraph(lf, width=250, height=150)
+            self.lt_graph.points = old_pts; self.lt_graph.max_time = old_max; self.lt_graph.draw()
+        self.lt_graph.pack(pady=5)
+        
+        l_entry = ctk.CTkEntry(lf, width=80)
+        l_entry.insert(0, str(self.lt_graph.max_time))
+        l_entry.pack()
+        ctk.CTkButton(lf, text="Update Max Time (ms)", command=lambda: self.update_max_time(self.lt_graph, l_entry)).pack(pady=5)
+        
+        rf = ctk.CTkFrame(frame)
+        rf.pack(side="right", expand=True, fill="both", padx=5)
+        ctk.CTkLabel(rf, text="Right Trigger (RT)").pack()
+        if not self.rt_graph: self.rt_graph = DraggableGraph(rf, width=250, height=150)
+        else:
+            old_pts = self.rt_graph.points; old_max = self.rt_graph.max_time
+            self.rt_graph = DraggableGraph(rf, width=250, height=150)
+            self.rt_graph.points = old_pts; self.rt_graph.max_time = old_max; self.rt_graph.draw()
+        self.rt_graph.pack(pady=5)
+        
+        r_entry = ctk.CTkEntry(rf, width=80)
+        r_entry.insert(0, str(self.rt_graph.max_time))
+        r_entry.pack()
+        ctk.CTkButton(rf, text="Update Max Time (ms)", command=lambda: self.update_max_time(self.rt_graph, r_entry)).pack(pady=5)
+        
+    def update_max_time(self, graph, entry):
+        try:
+            graph.max_time = int(entry.get())
+            graph.draw()
+        except: pass
 
     def get_mappings(self):
         try:
@@ -344,10 +547,12 @@ class X360CE_EmulatorApp:
                 "A": int(self.map_a.get()),
                 "B": int(self.map_b.get()),
                 "X": int(self.map_x.get()),
-                "Y": int(self.map_y.get())
+                "Y": int(self.map_y.get()),
+                "LB": int(self.map_lb.get()),
+                "RB": int(self.map_rb.get())
             }
         except ValueError:
-            return {"A": 0, "B": 1, "X": 2, "Y": 3}
+            return {"A": 0, "B": 1, "X": 2, "Y": 3, "LB": 4, "RB": 5}
 
     def emulator_loop(self):
         while self.running:
@@ -355,6 +560,9 @@ class X360CE_EmulatorApp:
                 time.sleep(1)
                 continue
                 
+            
+            curr_time = time.time()
+
             current_mode = self.mode.get()
             
             if current_mode == "Bluetooth":
@@ -405,19 +613,64 @@ class X360CE_EmulatorApp:
                 
                 self.gamepad.left_joystick(x_value=int(lx * 32767), y_value=int(ly * 32767))
                 
-            if self.joystick.get_numaxes() >= 4:
+            if self.joystick.get_numaxes() >= 6:
+                # Windows DInput mapping for ESP32-BLE-Gamepad:
+                # 0=X, 1=Y, 2=Z(RightJoyX), 3=rX(LeftTrigger), 4=rY(RightTrigger), 5=rZ(RightJoyY)
                 rx = self.joystick.get_axis(2)
-                ry = self.joystick.get_axis(3)
+                ry = self.joystick.get_axis(5)
                 
                 if self.inv_rx.get(): rx = -rx
                 if self.inv_ry.get(): ry = -ry
                 
                 self.gamepad.right_joystick(x_value=int(rx * 32767), y_value=int(ry * 32767))
                 
+                lt_val = self.joystick.get_axis(3)
+                rt_val = self.joystick.get_axis(4)
+                
+                # Normalize values (-1..1 to 0..1)
+                lt_val = (lt_val + 1.0) / 2.0
+                rt_val = (rt_val + 1.0) / 2.0
+                
+                self.gamepad.left_trigger_float(value_float=lt_val)
+                self.gamepad.right_trigger_float(value_float=rt_val)
+
+                if self.use_pc_simulation.get() and self.lt_graph and self.rt_graph and self.joystick.get_numbuttons() >= 8:
+                    lt_btn = self.joystick.get_button(6) # Button 7 is index 6
+                    rt_btn = self.joystick.get_button(7) # Button 8 is index 7
+                    
+                    curr_time = time.time()
+                    elapsed_ms = (curr_time - getattr(self, 'last_update_time', curr_time)) * 1000.0
+                    self.last_update_time = curr_time
+                    
+                    if lt_btn: self.lt_time += elapsed_ms
+                    else: self.lt_time -= elapsed_ms * 2.0 # Ramp down twice as fast
+                    self.lt_time = max(0.0, min(self.lt_graph.max_time, self.lt_time))
+                    
+                    if rt_btn: self.rt_time += elapsed_ms
+                    else: self.rt_time -= elapsed_ms * 2.0
+                    self.rt_time = max(0.0, min(self.rt_graph.max_time, self.rt_time))
+                    
+                    lt_val = self.lt_graph.get_pressure(self.lt_time)
+                    rt_val = self.rt_graph.get_pressure(self.rt_time)
+                    
+                    self.gamepad.left_trigger_float(value_float=lt_val)
+                    self.gamepad.right_trigger_float(value_float=rt_val)
+
+            elif self.joystick.get_numaxes() >= 4:
+                # Fallback for generic 4-axis controllers
+                rx = self.joystick.get_axis(2)
+                ry = self.joystick.get_axis(3)
+                if self.inv_rx.get(): rx = -rx
+                if self.inv_ry.get(): ry = -ry
+                self.gamepad.right_joystick(x_value=int(rx * 32767), y_value=int(ry * 32767))
+                lt_val, rt_val = 0.0, 0.0
+                
             for btn_name, xbox_btn in [("A", vg.XUSB_BUTTON.XUSB_GAMEPAD_A),
                                        ("B", vg.XUSB_BUTTON.XUSB_GAMEPAD_B),
                                        ("X", vg.XUSB_BUTTON.XUSB_GAMEPAD_X),
-                                       ("Y", vg.XUSB_BUTTON.XUSB_GAMEPAD_Y)]:
+                                       ("Y", vg.XUSB_BUTTON.XUSB_GAMEPAD_Y),
+                                       ("LB", vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER),
+                                       ("RB", vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER)]:
                 hw_idx = mapping.get(btn_name, 0)
                 if hw_idx < self.joystick.get_numbuttons():
                     is_pressed = self.joystick.get_button(hw_idx)
@@ -429,11 +682,12 @@ class X360CE_EmulatorApp:
                     self.gamepad.release_button(button=xbox_btn)
                 
             self.gamepad.update()
-            self.root.after(0, self.update_ui, lx, ly, rx, ry, btns_state)
+            self.root.after(0, self.update_ui, lx, ly, rx, ry, btns_state, lt_val, rt_val)
         except Exception as e:
             self.joystick.quit()
             self.joystick = None
-            self.root.after(0, lambda: self.status_var.set(f"Status: Controller Disconnected! ({e})"))
+            err_msg = str(e)
+            self.root.after(0, lambda m=err_msg: self.status_var.set(f"Status: Controller Disconnected! ({m})"))
             self.root.after(0, lambda: self.device_var.set("Device: None"))
             
     def run_usb_cycle(self):
@@ -498,7 +752,8 @@ class X360CE_EmulatorApp:
         except Exception as e:
             self.ser.close()
             self.ser = None
-            self.root.after(0, lambda: self.status_var.set(f"Status: Serial Disconnected! ({e})"))
+            err_msg = str(e)
+            self.root.after(0, lambda m=err_msg: self.status_var.set(f"Status: Serial Disconnected! ({m})"))
             self.root.after(0, lambda: self.device_var.set("Device: None"))
 
 if __name__ == "__main__":
