@@ -130,8 +130,8 @@ class X360CE_EmulatorApp:
                     for chunk in response.iter_content(chunk_size=8192):
                         f.write(chunk)
                 
-                # Run the installer silently and kill the current app
-                subprocess.Popen([installer_path, "/SILENT"])
+                # Run the installer and kill the current app
+                ctypes.windll.shell32.ShellExecuteW(None, "runas", installer_path, "/SILENT", None, 1)
                 self.root.after(0, self.quit_app)
             except Exception as e:
                 self.root.after(0, lambda: label.configure(text=f"Download failed! {str(e)}"))
@@ -234,22 +234,37 @@ class X360CE_EmulatorApp:
         btns = [str(i) for i in range(32)]
         
         ctk.CTkLabel(frame_map, text="A:").grid(row=1, column=0, padx=5, pady=5)
-        self.map_a = ctk.CTkOptionMenu(frame_map, values=btns, width=60); self.map_a.grid(row=1, column=1, padx=5, pady=5); self.map_a.set("0")
+        self.map_a = ctk.CTkOptionMenu(frame_map, values=btns, width=60, command=lambda e: self.save_curves()); self.map_a.grid(row=1, column=1, padx=5, pady=5); self.map_a.set("0")
         
         ctk.CTkLabel(frame_map, text="B:").grid(row=1, column=2, padx=5, pady=5)
-        self.map_b = ctk.CTkOptionMenu(frame_map, values=btns, width=60); self.map_b.grid(row=1, column=3, padx=5, pady=5); self.map_b.set("1")
+        self.map_b = ctk.CTkOptionMenu(frame_map, values=btns, width=60, command=lambda e: self.save_curves()); self.map_b.grid(row=1, column=3, padx=5, pady=5); self.map_b.set("1")
         
         ctk.CTkLabel(frame_map, text="X:").grid(row=2, column=0, padx=5, pady=5)
-        self.map_x = ctk.CTkOptionMenu(frame_map, values=btns, width=60); self.map_x.grid(row=2, column=1, padx=5, pady=5); self.map_x.set("2")
+        self.map_x = ctk.CTkOptionMenu(frame_map, values=btns, width=60, command=lambda e: self.save_curves()); self.map_x.grid(row=2, column=1, padx=5, pady=5); self.map_x.set("2")
         
         ctk.CTkLabel(frame_map, text="Y:").grid(row=2, column=2, padx=5, pady=5)
-        self.map_y = ctk.CTkOptionMenu(frame_map, values=btns, width=60); self.map_y.grid(row=2, column=3, padx=5, pady=5); self.map_y.set("3")
+        self.map_y = ctk.CTkOptionMenu(frame_map, values=btns, width=60, command=lambda e: self.save_curves()); self.map_y.grid(row=2, column=3, padx=5, pady=5); self.map_y.set("3")
 
         ctk.CTkLabel(frame_map, text="LB:").grid(row=3, column=0, padx=5, pady=5)
-        self.map_lb = ctk.CTkOptionMenu(frame_map, values=btns, width=60); self.map_lb.grid(row=3, column=1, padx=5, pady=5); self.map_lb.set("4")
+        self.map_lb = ctk.CTkOptionMenu(frame_map, values=btns, width=60, command=lambda e: self.save_curves()); self.map_lb.grid(row=3, column=1, padx=5, pady=5); self.map_lb.set("4")
         
         ctk.CTkLabel(frame_map, text="RB:").grid(row=3, column=2, padx=5, pady=5)
-        self.map_rb = ctk.CTkOptionMenu(frame_map, values=btns, width=60); self.map_rb.grid(row=3, column=3, padx=5, pady=5); self.map_rb.set("5")
+        self.map_rb = ctk.CTkOptionMenu(frame_map, values=btns, width=60, command=lambda e: self.save_curves()); self.map_rb.grid(row=3, column=3, padx=5, pady=5); self.map_rb.set("5")
+        
+        # Load mappings
+        try:
+            with open("curves.json", "r") as cf:
+                cset = json.load(cf)
+                if 'mappings' in cset:
+                    m = cset['mappings']
+                    if "A" in m: self.map_a.set(str(m["A"]))
+                    if "B" in m: self.map_b.set(str(m["B"]))
+                    if "X" in m: self.map_x.set(str(m["X"]))
+                    if "Y" in m: self.map_y.set(str(m["Y"]))
+                    if "LB" in m: self.map_lb.set(str(m["LB"]))
+                    if "RB" in m: self.map_rb.set(str(m["RB"]))
+        except: pass
+
 
         # Joystick Inversion Section
         frame_joy = ctk.CTkFrame(container_map)
@@ -419,6 +434,7 @@ class X360CE_EmulatorApp:
                 'lt_max_time': self.lt_graph.max_time,
                 'rt_points': self.rt_graph.points,
                 'rt_max_time': self.rt_graph.max_time,
+                'mappings': self.get_mappings(),
             }
             with open("curves.json", "w") as cf:
                 json.dump(settings, cf)
