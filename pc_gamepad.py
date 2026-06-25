@@ -88,7 +88,7 @@ class DraggableGraph(tk.Canvas):
                 return max(0.0, min(1.0, 1.0 - (y / self.height)))
         return 1.0
 
-APP_VERSION = "2.1"
+APP_VERSION = "2.2"
 
 class X360CE_EmulatorApp:
     
@@ -152,14 +152,24 @@ class X360CE_EmulatorApp:
         self.joystick = None
         self.ser = None
         
-        self.mode = ctk.StringVar(value="Bluetooth")
         self.use_pc_simulation = ctk.BooleanVar(value=True)
         self.lt_time = 0.0
         self.rt_time = 0.0
         self.last_update_time = time.time()
-        self.lt_graph = None
-        self.rt_graph = None
- # "Bluetooth" or "USB"
+        
+        self.hidden_frame = tk.Frame(self.root)
+        self.lt_graph = DraggableGraph(self.hidden_frame, width=250, height=150)
+        self.rt_graph = DraggableGraph(self.hidden_frame, width=250, height=150)
+        
+        # Load curves
+        try:
+            with open("curves.json", "r") as cf:
+                cset = json.load(cf)
+                self.lt_graph.points = [tuple(p) for p in cset.get('lt_points', self.lt_graph.points)]
+                self.lt_graph.max_time = cset.get('lt_max_time', 1000)
+                self.rt_graph.points = [tuple(p) for p in cset.get('rt_points', self.rt_graph.points)]
+                self.rt_graph.max_time = cset.get('rt_max_time', 1000)
+        except: pass
         
         try:
             pygame.init()
@@ -199,8 +209,7 @@ class X360CE_EmulatorApp:
         btn_frame3 = ctk.CTkFrame(frame_toggle, fg_color="transparent")
         btn_frame3.pack(pady=10)
         
-        ctk.CTkRadioButton(btn_frame3, text="Bluetooth (DInput)", variable=self.mode, value="Bluetooth", command=self.switch_mode).pack(side="left", padx=15)
-        ctk.CTkRadioButton(btn_frame3, text="USB", variable=self.mode, value="USB", command=self.switch_mode).pack(side="left", padx=15)
+        ctk.CTkLabel(btn_frame3, text="Auto Detect (Bluetooth & USB)").pack(side="left", padx=15)
         
         self.com_var = ctk.StringVar()
         self.com_combo = ctk.CTkOptionMenu(btn_frame3, variable=self.com_var, width=100)
@@ -400,7 +409,20 @@ class X360CE_EmulatorApp:
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
         
     def hide_window(self):
+        self.save_curves()
         self.root.withdraw()
+
+    def save_curves(self):
+        try:
+            settings = {
+                'lt_points': self.lt_graph.points,
+                'lt_max_time': self.lt_graph.max_time,
+                'rt_points': self.rt_graph.points,
+                'rt_max_time': self.rt_graph.max_time,
+            }
+            with open("curves.json", "w") as cf:
+                json.dump(settings, cf)
+        except: pass
         
     def show_window(self, icon=None, item=None):
         self.root.after(0, self.root.deiconify)
@@ -453,11 +475,7 @@ class X360CE_EmulatorApp:
                     
                     if res.returncode == 0:
                         self.root.after(0, lambda: messagebox.showinfo("Success", f"Flashed {mode_flash} version successfully!"))
-                        if mode_flash == "bluetooth":
-                            self.mode.set("Bluetooth")
-                        else:
-                            self.mode.set("USB")
-                        self.root.after(0, self.switch_mode)
+
                     else:
                         err_msg = res.stderr[-500:] if res.stderr else res.stdout[-500:]
                         self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to flash firmware:\n{err_msg}"))
@@ -470,13 +488,6 @@ class X360CE_EmulatorApp:
 
             threading.Thread(target=flash_thread, daemon=True).start()
 
-    def switch_mode(self):
-        self.update_ui(0, 0, 0, 0, {})
-        if self.mode.get() == "USB":
-            self.status_var.set("Status: Connecting to Serial Port...")
-        else:
-            self.status_var.set("Status: Looking for physical controller...")
-        
     def update_ui(self, lx, ly, rx, ry, btns, lt_val=0.0, rt_val=0.0):
         self.canvas.coords(self.joy_l_dot, 95 + lx*30, 65 + ly*30, 105 + lx*30, 75 + ly*30)
         self.canvas.coords(self.joy_r_dot, 295 + rx*30, 65 + ry*30, 305 + rx*30, 75 + ry*30)
@@ -508,12 +519,11 @@ class X360CE_EmulatorApp:
         lf = ctk.CTkFrame(frame)
         lf.pack(side="left", expand=True, fill="both", padx=5)
         ctk.CTkLabel(lf, text="Left Trigger (LT)").pack()
-        if not self.lt_graph: self.lt_graph = DraggableGraph(lf, width=250, height=150)
-        else:
-            old_pts = self.lt_graph.points; old_max = self.lt_graph.max_time
-            self.lt_graph = DraggableGraph(lf, width=250, height=150)
-            self.lt_graph.points = old_pts; self.lt_graph.max_time = old_max; self.lt_graph.draw()
+        old_pts = self.lt_graph.points; old_max = self.lt_graph.max_time
+        self.lt_graph = DraggableGraph(lf, width=250, height=150)
+        self.lt_graph.points = old_pts; self.lt_graph.max_time = old_max; self.lt_graph.draw()
         self.lt_graph.pack(pady=5)
+        self.lt_graph.bind("<ButtonRelease-1>", lambda e: self.save_curves())
         
         l_entry = ctk.CTkEntry(lf, width=80)
         l_entry.insert(0, str(self.lt_graph.max_time))
@@ -523,12 +533,11 @@ class X360CE_EmulatorApp:
         rf = ctk.CTkFrame(frame)
         rf.pack(side="right", expand=True, fill="both", padx=5)
         ctk.CTkLabel(rf, text="Right Trigger (RT)").pack()
-        if not self.rt_graph: self.rt_graph = DraggableGraph(rf, width=250, height=150)
-        else:
-            old_pts = self.rt_graph.points; old_max = self.rt_graph.max_time
-            self.rt_graph = DraggableGraph(rf, width=250, height=150)
-            self.rt_graph.points = old_pts; self.rt_graph.max_time = old_max; self.rt_graph.draw()
+        old_pts = self.rt_graph.points; old_max = self.rt_graph.max_time
+        self.rt_graph = DraggableGraph(rf, width=250, height=150)
+        self.rt_graph.points = old_pts; self.rt_graph.max_time = old_max; self.rt_graph.draw()
         self.rt_graph.pack(pady=5)
+        self.rt_graph.bind("<ButtonRelease-1>", lambda e: self.save_curves())
         
         r_entry = ctk.CTkEntry(rf, width=80)
         r_entry.insert(0, str(self.rt_graph.max_time))
@@ -539,6 +548,7 @@ class X360CE_EmulatorApp:
         try:
             graph.max_time = int(entry.get())
             graph.draw()
+            self.save_curves()
         except: pass
 
     def get_mappings(self):
@@ -560,21 +570,15 @@ class X360CE_EmulatorApp:
                 time.sleep(1)
                 continue
                 
+            bt_active = self.run_bluetooth_cycle()
             
-            curr_time = time.time()
-
-            current_mode = self.mode.get()
-            
-            if current_mode == "Bluetooth":
-                if self.ser:
-                    self.ser.close()
-                    self.ser = None
-                self.run_bluetooth_cycle()
-            else:
-                if self.joystick:
-                    self.joystick.quit()
-                    self.joystick = None
-                self.run_usb_cycle()
+            usb_active = False
+            if not bt_active:
+                usb_active = self.run_usb_cycle()
+                
+            if not bt_active and not usb_active:
+                self.root.after(0, lambda: self.status_var.set("Status: Looking for controller (BT/USB)..."))
+                self.root.after(0, lambda: self.device_var.set("Device: None"))
                 
             time.sleep(0.01)
 
@@ -590,14 +594,16 @@ class X360CE_EmulatorApp:
                 name = joy.get_name()
                 if "Xbox 360" not in name and "Virtual" not in name:
                     self.joystick = joy
-                    self.root.after(0, lambda: self.status_var.set("Status: Physical Controller Connected!"))
-                    self.root.after(0, lambda n=name: self.device_var.set(f"Device: {n}"))
+                    self.root.after(0, lambda: self.status_var.set("Status: Bluetooth Controller Connected!"))
+                    self.root.after(0, lambda n=name: self.device_var.set(f"Device: {n} (Bluetooth)"))
+                    if self.ser:
+                        self.ser.close()
+                        self.ser = None
                     break
                 else:
                     joy.quit()
             if not self.joystick:
-                time.sleep(1)
-                return
+                return False
                 
         try:
             lx, ly, rx, ry = 0.0, 0.0, 0.0, 0.0
@@ -614,8 +620,6 @@ class X360CE_EmulatorApp:
                 self.gamepad.left_joystick(x_value=int(lx * 32767), y_value=int(ly * 32767))
                 
             if self.joystick.get_numaxes() >= 6:
-                # Windows DInput mapping for ESP32-BLE-Gamepad:
-                # 0=X, 1=Y, 2=Z(RightJoyX), 3=rX(LeftTrigger), 4=rY(RightTrigger), 5=rZ(RightJoyY)
                 rx = self.joystick.get_axis(2)
                 ry = self.joystick.get_axis(5)
                 
@@ -627,7 +631,6 @@ class X360CE_EmulatorApp:
                 lt_val = self.joystick.get_axis(3)
                 rt_val = self.joystick.get_axis(4)
                 
-                # Normalize values (-1..1 to 0..1)
                 lt_val = (lt_val + 1.0) / 2.0
                 rt_val = (rt_val + 1.0) / 2.0
                 
@@ -635,15 +638,15 @@ class X360CE_EmulatorApp:
                 self.gamepad.right_trigger_float(value_float=rt_val)
 
                 if self.use_pc_simulation.get() and self.lt_graph and self.rt_graph and self.joystick.get_numbuttons() >= 8:
-                    lt_btn = self.joystick.get_button(6) # Button 7 is index 6
-                    rt_btn = self.joystick.get_button(7) # Button 8 is index 7
+                    lt_btn = self.joystick.get_button(6) 
+                    rt_btn = self.joystick.get_button(7) 
                     
                     curr_time = time.time()
                     elapsed_ms = (curr_time - getattr(self, 'last_update_time', curr_time)) * 1000.0
                     self.last_update_time = curr_time
                     
                     if lt_btn: self.lt_time += elapsed_ms
-                    else: self.lt_time -= elapsed_ms * 2.0 # Ramp down twice as fast
+                    else: self.lt_time -= elapsed_ms * 2.0 
                     self.lt_time = max(0.0, min(self.lt_graph.max_time, self.lt_time))
                     
                     if rt_btn: self.rt_time += elapsed_ms
@@ -657,7 +660,6 @@ class X360CE_EmulatorApp:
                     self.gamepad.right_trigger_float(value_float=rt_val)
 
             elif self.joystick.get_numaxes() >= 4:
-                # Fallback for generic 4-axis controllers
                 rx = self.joystick.get_axis(2)
                 ry = self.joystick.get_axis(3)
                 if self.inv_rx.get(): rx = -rx
@@ -683,88 +685,109 @@ class X360CE_EmulatorApp:
                 
             self.gamepad.update()
             self.root.after(0, self.update_ui, lx, ly, rx, ry, btns_state, lt_val, rt_val)
+            return True
+            
         except Exception as e:
             self.joystick.quit()
             self.joystick = None
             err_msg = str(e)
             self.root.after(0, lambda m=err_msg: self.status_var.set(f"Status: Controller Disconnected! ({m})"))
             self.root.after(0, lambda: self.device_var.set("Device: None"))
+            return False
             
     def run_usb_cycle(self):
         port = self.com_var.get()
-        if not port or port == "No COM Ports":
-            time.sleep(1)
-            return
+        if not port or port == "No COM Ports" or port == "Select COM Port":
+            return False
             
         if not self.ser or self.ser.port != port:
-            if self.ser:
-                try: self.ser.close()
-                except: pass
-                self.ser = None
             try:
-                self.ser = serial.Serial(port, BAUD_RATE, timeout=1)
-                self.root.after(0, lambda: self.status_var.set("Status: Serial Connected!"))
-                self.root.after(0, lambda: self.device_var.set(f"Device: {port}"))
+                if self.ser: self.ser.close()
+                self.ser = serial.Serial(port, 115200, timeout=0)
+                self.root.after(0, lambda: self.status_var.set("Status: USB Serial Connected!"))
+                self.root.after(0, lambda p=port: self.device_var.set(f"Device: ESP32 ({p})"))
+                if self.joystick:
+                    self.joystick.quit()
+                    self.joystick = None
             except:
-                time.sleep(1)
-                return
-                
+                if self.ser:
+                    self.ser.close()
+                    self.ser = None
+                return False
+
         try:
-            if self.ser.in_waiting > 0:
-                line = self.ser.readline().decode('utf-8', errors='ignore').strip()
-                if line.startswith("X:"):
-                    parts = line.split(',')
-                    data = {}
-                    for part in parts:
-                        if ':' in part:
-                            k, v = part.split(':')
-                            try: data[k] = int(v)
-                            except: pass
-                            
-                    if 'X' in data and 'Y' in data:
-                        vx = data['X']
-                        vy = data['Y']
-                        
-                        if self.inv_lx.get(): vx = -vx
-                        if self.inv_ly.get(): vy = -vy
-                        
-                        self.gamepad.left_joystick(x_value=vx, y_value=vy)
-                        
-                        btns_state = {}
-                        
-                        if data.get('A'): self.gamepad.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_A); btns_state['A']=1
-                        else: self.gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_A); btns_state['A']=0
-                        
-                        if data.get('B'): self.gamepad.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_B); btns_state['B']=1
-                        else: self.gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_B); btns_state['B']=0
-                        
-                        if data.get('XBTN'): self.gamepad.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_X); btns_state['X']=1
-                        else: self.gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_X); btns_state['X']=0
-                        
-                        if data.get('YBTN'): self.gamepad.press_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_Y); btns_state['Y']=1
-                        else: self.gamepad.release_button(button=vg.XUSB_BUTTON.XUSB_GAMEPAD_Y); btns_state['Y']=0
-                        
-                        self.gamepad.update()
-                        
-                        lx = vx / 32767.0
-                        ly = vy / 32767.0 
-                        self.root.after(0, self.update_ui, lx, ly, 0, 0, btns_state)
+            line = self.ser.readline().decode('utf-8').strip()
+            if not line: return True
+            
+            parts = line.split(',')
+            lx, ly, rx, ry = 0.0, 0.0, 0.0, 0.0
+            btns_state = {}
+            mapping = self.get_mappings()
+            
+            for part in parts:
+                if ':' not in part: continue
+                key, val = part.split(':')
+                try: val = int(val)
+                except: continue
+                
+                if key == 'X':
+                    lx = (val - 1800) / 1800.0
+                    lx = max(-1.0, min(1.0, lx))
+                elif key == 'Y':
+                    ly = (val - 1800) / 1800.0
+                    ly = max(-1.0, min(1.0, ly))
+                elif key == 'B':
+                    for btn_name, xbox_btn in [("A", vg.XUSB_BUTTON.XUSB_GAMEPAD_A),
+                                               ("B", vg.XUSB_BUTTON.XUSB_GAMEPAD_B),
+                                               ("X", vg.XUSB_BUTTON.XUSB_GAMEPAD_X),
+                                               ("Y", vg.XUSB_BUTTON.XUSB_GAMEPAD_Y),
+                                               ("LB", vg.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER),
+                                               ("RB", vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER)]:
+                        hw_idx = mapping.get(btn_name, 0)
+                        is_pressed = not bool(val & (1 << hw_idx))
+                        btns_state[btn_name] = is_pressed
+                        if is_pressed: self.gamepad.press_button(button=xbox_btn)
+                        else: self.gamepad.release_button(button=xbox_btn)
+            
+            if self.inv_lx.get(): lx = -lx
+            if self.inv_ly.get(): ly = -ly
+            
+            self.gamepad.left_joystick(x_value=int(lx * 32767), y_value=int(ly * 32767))
+            
+            lt_val, rt_val = 0.0, 0.0
+            if self.use_pc_simulation.get() and self.lt_graph and self.rt_graph:
+                lt_btn = btns_state.get('LT', False) # If LT is not physically wired, we map it manually or assume from a button? 
+                # Wait, mapping doesn't have LT/RT, they mapped LB/RB. Let's use mapping logic:
+                # Actually earlier the user wanted button 4 for RT and 22 for LT
+                lt_btn = not bool(val & (1 << 22)) if 'val' in locals() else False
+                rt_btn = not bool(val & (1 << 4)) if 'val' in locals() else False
+                
+                curr_time = time.time()
+                elapsed_ms = (curr_time - getattr(self, 'last_update_time', curr_time)) * 1000.0
+                self.last_update_time = curr_time
+                
+                if lt_btn: self.lt_time += elapsed_ms
+                else: self.lt_time -= elapsed_ms * 2.0
+                self.lt_time = max(0.0, min(self.lt_graph.max_time, self.lt_time))
+                
+                if rt_btn: self.rt_time += elapsed_ms
+                else: self.rt_time -= elapsed_ms * 2.0
+                self.rt_time = max(0.0, min(self.rt_graph.max_time, self.rt_time))
+                
+                lt_val = self.lt_graph.get_pressure(self.lt_time)
+                rt_val = self.rt_graph.get_pressure(self.rt_time)
+                
+                self.gamepad.left_trigger_float(value_float=lt_val)
+                self.gamepad.right_trigger_float(value_float=rt_val)
+                
+            self.gamepad.update()
+            self.root.after(0, self.update_ui, lx, ly, rx, ry, btns_state, lt_val, rt_val)
+            return True
+            
         except Exception as e:
             self.ser.close()
             self.ser = None
             err_msg = str(e)
             self.root.after(0, lambda m=err_msg: self.status_var.set(f"Status: Serial Disconnected! ({m})"))
             self.root.after(0, lambda: self.device_var.set("Device: None"))
-
-if __name__ == "__main__":
-    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, "Global\\ESP32_Virtual_Gamepad_Mutex")
-    if ctypes.windll.kernel32.GetLastError() == 183:
-        sys.exit(0)
-
-    root = ctk.CTk()
-    app = X360CE_EmulatorApp(root)
-    
-    if "--minimized" in sys.argv:
-        app.hide_window()
-        
-    root.mainloop()
+            return False
