@@ -393,8 +393,8 @@ class X360CE_EmulatorApp:
         threading.Thread(target=task, daemon=True).start()
 
     def check_app_updates(self):
-        messagebox.showinfo("Updater", "Checking for updates...\n\nYou are currently running the latest version of ESP32 Virtual Gamepad!")
-
+        self.check_for_updates()
+        # The background thread will prompt if an update is found.
     def refresh_ports(self):
         ports = [port.device for port in serial.tools.list_ports.comports()]
         if ports:
