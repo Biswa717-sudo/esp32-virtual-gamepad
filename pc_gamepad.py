@@ -88,7 +88,7 @@ class DraggableGraph(tk.Canvas):
                 return max(0.0, min(1.0, 1.0 - (y / self.height)))
         return 1.0
 
-APP_VERSION = "2.2"
+APP_VERSION = "2.4"
 
 class X360CE_EmulatorApp:
     
