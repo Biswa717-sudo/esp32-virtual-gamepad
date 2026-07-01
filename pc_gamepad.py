@@ -20,7 +20,7 @@ import urllib.request
 import json
 
 BAUD_RATE = 115200
-APP_VERSION = "2.12"
+APP_VERSION = "2.13"
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -183,20 +183,34 @@ class X360CE_EmulatorApp:
         self.joy_r_dot = self.canvas.create_oval(315, 55, 325, 65, fill="#1f6aa5")
         
         # Buttons (A, B, X, Y)
-        self.btn_a_ind = self.canvas.create_oval(190, 35, 210, 55, fill="#2b2b2b", outline="gray")
-        self.canvas.create_text(200, 45, text="A", fill="white")
-        self.btn_b_ind = self.canvas.create_oval(220, 35, 240, 55, fill="#2b2b2b", outline="gray")
-        self.canvas.create_text(230, 45, text="B", fill="white")
-        self.btn_x_ind = self.canvas.create_oval(190, 65, 210, 85, fill="#2b2b2b", outline="gray")
-        self.canvas.create_text(200, 75, text="X", fill="white")
-        self.btn_y_ind = self.canvas.create_oval(220, 65, 240, 85, fill="#2b2b2b", outline="gray")
-        self.canvas.create_text(230, 75, text="Y", fill="white")
+        self.btn_a_ind = self.canvas.create_oval(190, 80, 210, 100, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(200, 90, text="A", fill="white")
+        self.btn_b_ind = self.canvas.create_oval(220, 60, 240, 80, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(230, 70, text="B", fill="white")
+        self.btn_x_ind = self.canvas.create_oval(160, 60, 180, 80, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(170, 70, text="X", fill="white")
+        self.btn_y_ind = self.canvas.create_oval(190, 40, 210, 60, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(200, 50, text="Y", fill="white")
+        
+        # Center Buttons (View, Guide, Menu)
+        self.btn_view_ind = self.canvas.create_oval(160, 5, 180, 25, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(170, 15, text="V", fill="white", font=("Helvetica", 8))
+        self.btn_guide_ind = self.canvas.create_oval(190, 5, 210, 25, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(200, 15, text="G", fill="white", font=("Helvetica", 8))
+        self.btn_menu_ind = self.canvas.create_oval(220, 5, 240, 25, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(230, 15, text="M", fill="white", font=("Helvetica", 8))
+        
+        # D-Pad
+        self.btn_up_ind = self.canvas.create_rectangle(250, 40, 270, 60, fill="#2b2b2b", outline="gray")
+        self.btn_left_ind = self.canvas.create_rectangle(230, 60, 250, 80, fill="#2b2b2b", outline="gray")
+        self.btn_right_ind = self.canvas.create_rectangle(270, 60, 290, 80, fill="#2b2b2b", outline="gray")
+        self.btn_down_ind = self.canvas.create_rectangle(250, 80, 270, 100, fill="#2b2b2b", outline="gray")
         
         # Bumpers (LB, RB)
-        self.btn_lb_ind = self.canvas.create_oval(160, 35, 180, 55, fill="#2b2b2b", outline="gray")
-        self.canvas.create_text(170, 45, text="LB", fill="white")
-        self.btn_rb_ind = self.canvas.create_oval(250, 35, 270, 55, fill="#2b2b2b", outline="gray")
-        self.canvas.create_text(260, 45, text="RB", fill="white")
+        self.btn_lb_ind = self.canvas.create_oval(120, 10, 140, 30, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(130, 20, text="LB", fill="white", font=("Helvetica", 8))
+        self.btn_rb_ind = self.canvas.create_oval(260, 10, 280, 30, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(270, 20, text="RB", fill="white", font=("Helvetica", 8))
         
         # Triggers (LT, RT)
         self.canvas.create_text(20, 15, text="LT", fill="white", font=("Helvetica", 10, "bold"))
@@ -237,6 +251,13 @@ class X360CE_EmulatorApp:
         self.canvas.itemconfig(self.btn_y_ind, fill="#b59c28" if btns.get("Y") else "#2b2b2b")
         self.canvas.itemconfig(self.btn_lb_ind, fill="white" if btns.get("LB") else "#2b2b2b")
         self.canvas.itemconfig(self.btn_rb_ind, fill="white" if btns.get("RB") else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_view_ind, fill="white" if btns.get("View") else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_guide_ind, fill="white" if btns.get("Guide") else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_menu_ind, fill="white" if btns.get("Menu") else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_up_ind, fill="white" if btns.get("D-Up") else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_down_ind, fill="white" if btns.get("D-Down") else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_left_ind, fill="white" if btns.get("D-Left") else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_right_ind, fill="white" if btns.get("D-Right") else "#2b2b2b")
 
     def open_curve(self, hw):
         win = ctk.CTkToplevel(self.root)
@@ -398,7 +419,7 @@ class X360CE_EmulatorApp:
         if not self.ser or self.ser.port != port:
             try:
                 if self.ser: self.ser.close()
-                self.ser = serial.Serial(port, 115200, timeout=0)
+                self.ser = serial.Serial(port, 115200, timeout=0.1)
                 self.root.after(0, lambda: self.status_var.set("USB Connected!"))
                 self.root.after(0, lambda p=port: self.device_var.set(f"ESP32 ({p})"))
                 if self.joystick: self.joystick.quit(); self.joystick = None
