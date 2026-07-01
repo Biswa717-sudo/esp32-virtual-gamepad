@@ -447,8 +447,47 @@ class X360CE_EmulatorApp:
             return False
 
     def flash_firmware(self, mode):
-        # omitted for brevity but keeping UI
-        pass
+        win = ctk.CTkToplevel(self.root)
+        win.title(f"Flashing {mode.upper()} Firmware...")
+        win.geometry("600x400")
+        win.attributes("-topmost", True)
+        
+        txt = ctk.CTkTextbox(win, width=580, height=380, font=("Courier", 12))
+        txt.pack(padx=10, pady=10)
+        txt.insert("end", f"Starting {mode} flash process...\n")
+        
+        def run_flash():
+            src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+            main_cpp = os.path.join(src_dir, "main.cpp")
+            main_wired = os.path.join(src_dir, "main_wired.cpp.disabled")
+            
+            if mode == "wired":
+                if os.path.exists(main_cpp): os.rename(main_cpp, main_cpp + ".disabled")
+                if os.path.exists(main_wired): os.rename(main_wired, main_cpp)
+            
+            try:
+                if self.ser: 
+                    self.ser.close()
+                    self.ser = None
+                    
+                process = subprocess.Popen(["pio", "run", "-t", "upload"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=os.path.dirname(os.path.abspath(__file__)))
+                for line in iter(process.stdout.readline, ""):
+                    self.root.after(0, lambda l=line: (txt.insert("end", l), txt.see("end")))
+                process.stdout.close()
+                process.wait()
+                if process.returncode == 0:
+                    self.root.after(0, lambda: txt.insert("end", "\nFLASH SUCCESSFUL!\n"))
+                else:
+                    self.root.after(0, lambda: txt.insert("end", f"\nFLASH FAILED with code {process.returncode}\n"))
+            except Exception as e:
+                self.root.after(0, lambda: txt.insert("end", f"\nERROR: {str(e)}\nIs PlatformIO (pio) installed and in your system PATH?\n"))
+                
+            finally:
+                if mode == "wired":
+                    if os.path.exists(main_cpp): os.rename(main_cpp, main_wired)
+                    if os.path.exists(main_cpp + ".disabled"): os.rename(main_cpp + ".disabled", main_cpp)
+                    
+        threading.Thread(target=run_flash, daemon=True).start()
 
     def update_vigembus(self):
         pass
