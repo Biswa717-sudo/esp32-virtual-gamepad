@@ -214,11 +214,11 @@ class X360CE_EmulatorApp:
                 d = json.load(f)
                 if "mappings" in d:
                     for hw, dat in d["mappings"].items():
-                        if hw in self.mappings:
+                        if hw in self.mappings and isinstance(dat, dict):
                             self.mappings[hw] = dat
                 if "curves" in d:
                     for hw, dat in d["curves"].items():
-                        if hw in self.curves:
+                        if hw in self.curves and isinstance(dat, dict):
                             self.curves[hw]["points"] = [tuple(p) for p in dat["points"]]
                             self.curves[hw]["max_time"] = dat["max_time"]
         except: pass
