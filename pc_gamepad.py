@@ -19,7 +19,7 @@ import urllib.request
 import json
 
 BAUD_RATE = 115200
-APP_VERSION = "2.10"
+APP_VERSION = "2.11"
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -86,6 +86,7 @@ class X360CE_EmulatorApp:
         self.root.geometry("680x850")
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
         self.running = True
+        self.is_flashing = False
         self.gamepad = None
         self.joystick = None
         self.ser = None
@@ -245,6 +246,7 @@ class X360CE_EmulatorApp:
 
     def emulator_loop(self):
         while self.running:
+            if self.is_flashing: time.sleep(1); continue
             if not self.gamepad: time.sleep(1); continue
             bt_active = self.run_bluetooth_cycle()
             usb_active = False
@@ -459,6 +461,7 @@ class X360CE_EmulatorApp:
         txt.insert("end", f"Starting {mode} flash process...\n")
         
         def run_flash():
+            self.is_flashing = True
             if getattr(sys, 'frozen', False):
                 base_dir = os.path.dirname(sys.executable)
             else:
@@ -512,6 +515,7 @@ class X360CE_EmulatorApp:
                 if mode == "wired":
                     if os.path.exists(main_cpp): os.rename(main_cpp, main_wired)
                     if os.path.exists(main_cpp + ".disabled"): os.rename(main_cpp + ".disabled", main_cpp)
+                self.is_flashing = False
                     
         threading.Thread(target=run_flash, daemon=True).start()
 
