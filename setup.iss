@@ -12,6 +12,8 @@ PrivilegesRequired=lowest
 
 [Files]
 Source: "D:\gamepad\dist\pc_gamepad\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "D:\gamepad\platformio.ini"; DestDir: "{app}"; Flags: ignoreversion
+Source: "D:\gamepad\src\*"; DestDir: "{app}\src"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\ESP32 Virtual Gamepad"; Filename: "{app}\pc_gamepad.exe"

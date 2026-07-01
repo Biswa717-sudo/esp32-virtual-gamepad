@@ -19,7 +19,7 @@ import urllib.request
 import json
 
 BAUD_RATE = 115200
-APP_VERSION = "2.7"
+APP_VERSION = "2.8"
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -459,7 +459,12 @@ class X360CE_EmulatorApp:
         txt.insert("end", f"Starting {mode} flash process...\n")
         
         def run_flash():
-            src_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+            if getattr(sys, 'frozen', False):
+                base_dir = os.path.dirname(sys.executable)
+            else:
+                base_dir = os.path.dirname(os.path.abspath(__file__))
+                
+            src_dir = os.path.join(base_dir, "src")
             main_cpp = os.path.join(src_dir, "main.cpp")
             main_wired = os.path.join(src_dir, "main_wired.cpp.disabled")
             
@@ -472,7 +477,7 @@ class X360CE_EmulatorApp:
                     self.ser.close()
                     self.ser = None
                     
-                process = subprocess.Popen(["pio", "run", "-t", "upload"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=os.path.dirname(os.path.abspath(__file__)))
+                process = subprocess.Popen(["pio", "run", "-t", "upload"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=base_dir)
                 for line in iter(process.stdout.readline, ""):
                     self.root.after(0, lambda l=line: (txt.insert("end", l), txt.see("end")))
                 process.stdout.close()
