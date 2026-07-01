@@ -225,8 +225,9 @@ class X360CE_EmulatorApp:
 
     def save_curves(self):
         for hw in HW_INPUTS:
-            self.mappings[hw]["target"] = self.target_vars[hw].get()
-            self.mappings[hw]["sim"] = self.sim_vars[hw].get()
+            if hw in self.target_vars and hw in self.sim_vars:
+                self.mappings[hw]["target"] = self.target_vars[hw].get()
+                self.mappings[hw]["sim"] = self.sim_vars[hw].get()
         try:
             with open("curves.json", "w") as f:
                 json.dump({"mappings": self.mappings, "curves": self.curves}, f)
@@ -291,8 +292,11 @@ class X360CE_EmulatorApp:
                             for i in range(len(pts)-1):
                                 p0, p1 = pts[i], pts[i+1]
                                 if p0[0] <= xt <= p1[0]:
-                                    y = p0[1] + ((xt - p0[0])/(p1[0] - p0[0]))*(p1[1] - p0[1])
-                                    val = max(0.0, min(1.0, 1.0 - (y/h)))
+                                    if p1[0] == p0[0]:
+                                        val = 1.0 - (p1[1]/h)
+                                    else:
+                                        y = p0[1] + ((xt - p0[0])/(p1[0] - p0[0]))*(p1[1] - p0[1])
+                                        val = max(0.0, min(1.0, 1.0 - (y/h)))
                                     break
                 else:
                     val = 1.0 if is_pressed else 0.0
