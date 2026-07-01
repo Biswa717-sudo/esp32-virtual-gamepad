@@ -19,7 +19,7 @@ import urllib.request
 import json
 
 BAUD_RATE = 115200
-APP_VERSION = "2.8"
+APP_VERSION = "2.10"
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -477,7 +477,26 @@ class X360CE_EmulatorApp:
                     self.ser.close()
                     self.ser = None
                     
-                process = subprocess.Popen(["pio", "run", "-t", "upload"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=base_dir)
+                import shutil
+                pio_cmd = ["pio", "run", "-t", "upload"]
+                if not shutil.which("pio"):
+                    py_exe = "python" if shutil.which("python") else ("python3" if shutil.which("python3") else None)
+                    if not py_exe:
+                        self.root.after(0, lambda: (txt.insert("end", "\nCRITICAL ERROR: Python is not installed on this PC!\nYou must download and install Python from python.org (ensure 'Add to PATH' is checked) before you can flash the firmware.\n"), txt.see("end")))
+                        return
+                        
+                    try:
+                        subprocess.check_output([py_exe, "-m", "platformio", "--version"], stderr=subprocess.STDOUT)
+                        pio_cmd = [py_exe, "-m", "platformio", "run", "-t", "upload"]
+                    except (subprocess.CalledProcessError, FileNotFoundError):
+                        self.root.after(0, lambda: (txt.insert("end", "PlatformIO not found! Attempting to auto-install via Python...\n"), txt.see("end")))
+                        install_proc = subprocess.Popen([py_exe, "-m", "pip", "install", "platformio"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                        for line in iter(install_proc.stdout.readline, ""):
+                            self.root.after(0, lambda l=line: (txt.insert("end", l), txt.see("end")))
+                        install_proc.wait()
+                        pio_cmd = [py_exe, "-m", "platformio", "run", "-t", "upload"]
+                        
+                process = subprocess.Popen(pio_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=base_dir)
                 for line in iter(process.stdout.readline, ""):
                     self.root.after(0, lambda l=line: (txt.insert("end", l), txt.see("end")))
                 process.stdout.close()
