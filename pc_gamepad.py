@@ -1,6 +1,7 @@
 import pygame
 import vgamepad as vg
 import tkinter as tk
+import tkinter as tk
 import customtkinter as ctk
 from tkinter import messagebox
 import threading
@@ -19,7 +20,7 @@ import urllib.request
 import json
 
 BAUD_RATE = 115200
-APP_VERSION = "2.11"
+APP_VERSION = "2.12"
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -165,6 +166,47 @@ class X360CE_EmulatorApp:
         ctk.CTkCheckBox(f_joy, text="Inv R-X", variable=self.inv_rx).pack(side="left", padx=15, pady=5)
         ctk.CTkCheckBox(f_joy, text="Inv R-Y", variable=self.inv_ry).pack(side="left", padx=15, pady=5)
 
+        # Visual Checker
+        f_vis = ctk.CTkFrame(self.root)
+        f_vis.pack(fill="x", padx=10, pady=5)
+        self.canvas = tk.Canvas(f_vis, width=400, height=120, bg="#2b2b2b", highlightthickness=0)
+        self.canvas.pack(pady=5)
+        
+        # Left Joy
+        self.canvas.create_text(80, 15, text="Left Joystick", fill="white", font=("Helvetica", 10, "bold"))
+        self.joy_l_bg = self.canvas.create_oval(50, 30, 110, 90, outline="gray", width=2)
+        self.joy_l_dot = self.canvas.create_oval(75, 55, 85, 65, fill="#a83232")
+        
+        # Right Joy
+        self.canvas.create_text(320, 15, text="Right Joystick", fill="white", font=("Helvetica", 10, "bold"))
+        self.joy_r_bg = self.canvas.create_oval(290, 30, 350, 90, outline="gray", width=2)
+        self.joy_r_dot = self.canvas.create_oval(315, 55, 325, 65, fill="#1f6aa5")
+        
+        # Buttons (A, B, X, Y)
+        self.btn_a_ind = self.canvas.create_oval(190, 35, 210, 55, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(200, 45, text="A", fill="white")
+        self.btn_b_ind = self.canvas.create_oval(220, 35, 240, 55, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(230, 45, text="B", fill="white")
+        self.btn_x_ind = self.canvas.create_oval(190, 65, 210, 85, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(200, 75, text="X", fill="white")
+        self.btn_y_ind = self.canvas.create_oval(220, 65, 240, 85, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(230, 75, text="Y", fill="white")
+        
+        # Bumpers (LB, RB)
+        self.btn_lb_ind = self.canvas.create_oval(160, 35, 180, 55, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(170, 45, text="LB", fill="white")
+        self.btn_rb_ind = self.canvas.create_oval(250, 35, 270, 55, fill="#2b2b2b", outline="gray")
+        self.canvas.create_text(260, 45, text="RB", fill="white")
+        
+        # Triggers (LT, RT)
+        self.canvas.create_text(20, 15, text="LT", fill="white", font=("Helvetica", 10, "bold"))
+        self.lt_bg = self.canvas.create_rectangle(10, 30, 30, 90, outline="gray", width=2)
+        self.lt_fill = self.canvas.create_rectangle(10, 90, 30, 90, fill="#a83232")
+
+        self.canvas.create_text(380, 15, text="RT", fill="white", font=("Helvetica", 10, "bold"))
+        self.rt_bg = self.canvas.create_rectangle(370, 30, 390, 90, outline="gray", width=2)
+        self.rt_fill = self.canvas.create_rectangle(370, 90, 390, 90, fill="#1f6aa5")
+
         # Firmware Buttons
         f_flash = ctk.CTkFrame(self.root)
         f_flash.pack(fill="x", padx=10, pady=5)
@@ -180,6 +222,21 @@ class X360CE_EmulatorApp:
     def on_target_change(self, hw, val):
         self.mappings[hw]["target"] = val
         self.save_curves()
+
+    def update_visuals(self, lx, ly, rx, ry, lt, rt, btns):
+        # joysticks (mapped from -1..1 to -25..25 offset)
+        self.canvas.coords(self.joy_l_dot, 75 + lx*25, 55 + ly*25, 85 + lx*25, 65 + ly*25)
+        self.canvas.coords(self.joy_r_dot, 315 + rx*25, 55 + ry*25, 325 + rx*25, 65 + ry*25)
+        # triggers (mapped from 0..1 to 0..60 height offset)
+        self.canvas.coords(self.lt_fill, 10, 90 - (lt * 60), 30, 90)
+        self.canvas.coords(self.rt_fill, 370, 90 - (rt * 60), 390, 90)
+        # buttons
+        self.canvas.itemconfig(self.btn_a_ind, fill="#2b6b3e" if btns.get("A") else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_b_ind, fill="#a83232" if btns.get("B") else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_x_ind, fill="#1f6aa5" if btns.get("X") else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_y_ind, fill="#b59c28" if btns.get("Y") else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_lb_ind, fill="white" if btns.get("LB") else "#2b2b2b")
+        self.canvas.itemconfig(self.btn_rb_ind, fill="white" if btns.get("RB") else "#2b2b2b")
 
     def open_curve(self, hw):
         win = ctk.CTkToplevel(self.root)
@@ -332,6 +389,8 @@ class X360CE_EmulatorApp:
             if out_btns[k]: self.gamepad.press_button(button=btn)
             else: self.gamepad.release_button(button=btn)
         self.gamepad.update()
+        
+        self.root.after(0, lambda: self.update_visuals(lx, ly, rx, ry, out_lt, out_rt, out_btns))
 
     def run_usb_cycle(self):
         port = self.com_var.get()
