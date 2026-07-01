@@ -19,7 +19,7 @@ import urllib.request
 import json
 
 BAUD_RATE = 115200
-APP_VERSION = "2.5"
+APP_VERSION = "2.7"
 
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("blue")
@@ -107,12 +107,14 @@ class X360CE_EmulatorApp:
 
         self.build_ui()
         self.setup_tray()
+        self.check_for_updates()
         self.thread = threading.Thread(target=self.emulator_loop, daemon=True)
         self.thread.start()
 
     def build_ui(self):
         title = ctk.CTkLabel(self.root, text="🎮 Controller Emulator Pro", font=ctk.CTkFont(size=24, weight="bold"))
         title.pack(pady=10)
+        ctk.CTkButton(self.root, text="Check for App Updates", fg_color="#3a7ebf", width=150, height=25, command=self.check_for_updates_manual).pack(pady=2)
 
         f_conn = ctk.CTkFrame(self.root)
         f_conn.pack(fill="x", padx=10, pady=5)
@@ -490,7 +492,91 @@ class X360CE_EmulatorApp:
         threading.Thread(target=run_flash, daemon=True).start()
 
     def update_vigembus(self):
-        pass
+        def task():
+            self.root.after(0, lambda: self.status_var.set("Status: Checking for ViGEmBus updates..."))
+            try:
+                req = urllib.request.Request("https://api.github.com/repos/nefarius/ViGEmBus/releases/latest", headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req) as response:
+                    data = json.loads(response.read().decode())
+                
+                download_url = None
+                filename = ""
+                for asset in data.get('assets', []):
+                    if asset['name'].endswith('.exe') or asset['name'].endswith('.msi'):
+                        download_url = asset['browser_download_url']
+                        filename = asset['name']
+                        break
+                
+                if not download_url:
+                    self.root.after(0, lambda: messagebox.showerror("Error", "Could not find the driver installer on GitHub."))
+                    return
+                
+                self.root.after(0, lambda: self.status_var.set("Status: Downloading ViGEmBus..."))
+                save_path = os.path.join(tempfile.gettempdir(), filename)
+                urllib.request.urlretrieve(download_url, save_path)
+                
+                self.root.after(0, lambda: self.status_var.set("Status: Launching ViGEmBus Installer..."))
+                os.startfile(save_path)
+                self.root.after(0, lambda: messagebox.showinfo("Success", "ViGEmBus installer downloaded and launched! Please complete the installation."))
+                
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Download Error", f"Failed to download ViGEmBus: {e}"))
+            finally:
+                self.root.after(0, lambda: self.status_var.set("Status: Ready."))
+        
+        threading.Thread(target=task, daemon=True).start()
+
+    def check_for_updates(self, manual=False):
+        def _check():
+            if manual:
+                self.root.after(0, lambda: self.status_var.set("Checking for updates..."))
+            try:
+                response = requests.get("https://api.github.com/repos/Biswa717-sudo/esp32-virtual-gamepad/releases/latest", timeout=5)
+                if response.status_code == 200:
+                    data = response.json()
+                    latest_version = data["tag_name"].replace("v", "")
+                    if latest_version != APP_VERSION:
+                        for asset in data.get("assets", []):
+                            if asset["name"].endswith(".exe"):
+                                download_url = asset["browser_download_url"]
+                                self.root.after(0, lambda: self.prompt_update(latest_version, download_url))
+                                break
+                    elif manual:
+                        self.root.after(0, lambda: messagebox.showinfo("No Updates", "You are on the latest version!"))
+            except Exception as e:
+                if manual: self.root.after(0, lambda: messagebox.showerror("Update Error", str(e)))
+            finally:
+                if manual: self.root.after(0, lambda: self.status_var.set("Status: Ready."))
+        threading.Thread(target=_check, daemon=True).start()
+
+    def check_for_updates_manual(self):
+        self.check_for_updates(manual=True)
+
+    def prompt_update(self, version, url):
+        if messagebox.askyesno("Update Available", f"Version {version} is available! Do you want to download and install it now?"):
+            self.download_update(url)
+
+    def download_update(self, url):
+        win = ctk.CTkToplevel(self.root)
+        win.title("Downloading Update")
+        win.geometry("300x100")
+        win.attributes("-topmost", True)
+        label = ctk.CTkLabel(win, text="Downloading... Please wait.")
+        label.pack(pady=20)
+        
+        def _download():
+            try:
+                response = requests.get(url, stream=True)
+                installer_path = os.path.join(tempfile.gettempdir(), "ESP32_Gamepad_Setup_Update.exe")
+                with open(installer_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                ctypes.windll.shell32.ShellExecuteW(None, "runas", installer_path, "/SILENT", None, 1)
+                self.root.after(0, self.quit_app)
+            except Exception as e:
+                self.root.after(0, lambda: label.configure(text=f"Download failed! {str(e)}"))
+                
+        threading.Thread(target=_download, daemon=True).start()
 
     def setup_tray(self):
         def create_image():
