@@ -1,64 +1,66 @@
 #include <Arduino.h>
 
-// Define pin numbers (Suitable for ESP32 30-pin)
-const int PIN_JOY_X = 32;
-const int PIN_JOY_Y = 33;
-const int PIN_JOY_BTN = 25;
+const int PIN_BTN_LT = 15;
+const int PIN_BTN_LB = 2;
+const int PIN_BTN_VIEW = 4;
+const int PIN_BTN_GUIDE = 16;
+const int PIN_BTN_MENU = 17;
+const int PIN_BTN_DPAD_UP = 5;
+const int PIN_BTN_DPAD_DOWN = 18;
+const int PIN_BTN_DPAD_LEFT = 19;
+const int PIN_BTN_DPAD_RIGHT = 21;
 
-const int PIN_BTN_A = 12;
+const int PIN_BTN_RT = 13;
+const int PIN_BTN_RB = 12;
+const int PIN_BTN_Y = 14;
 const int PIN_BTN_B = 27;
-const int PIN_BTN_X = 14;
-const int PIN_BTN_Y = 26;
+const int PIN_BTN_A = 26;
+const int PIN_BTN_X = 25;
 
-const int PIN_LED_RED = 18;
-const int PIN_LED_BLUE = 19;
+const int PIN_RIGHT_JOY_BTN_U = 33;
+const int PIN_RIGHT_JOY_BTN_D = 32;
+const int PIN_RIGHT_JOY_BTN_L = 39;
+const int PIN_RIGHT_JOY_BTN_R = 36;
 
-// Joystick calibration variables
-int joyCenterX = 2048;
-int joyCenterY = 2048;
+const int PIN_LEFT_JOY_X = 34;
+const int PIN_LEFT_JOY_Y = 35;
+
+const int PIN_LED_BLUE = 22;
+const int PIN_LED_RED = 23;
+
+int leftJoyCenterX = 2048;
+int leftJoyCenterY = 2048;
 const int JOY_DEADZONE = 200;
-
 const unsigned long UPDATE_INTERVAL = 10;
 unsigned long lastUpdate = 0;
 
 void setup() {
     Serial.begin(115200);
 
-    // Setup digital pins with internal pull-ups
-    pinMode(PIN_BTN_A, INPUT_PULLUP);
-    pinMode(PIN_BTN_B, INPUT_PULLUP);
-    pinMode(PIN_BTN_X, INPUT_PULLUP);
-    pinMode(PIN_BTN_Y, INPUT_PULLUP);
-    pinMode(PIN_JOY_BTN, INPUT_PULLUP);
+    int pullup_pins[] = {PIN_BTN_LT, PIN_BTN_LB, PIN_BTN_VIEW, PIN_BTN_GUIDE, PIN_BTN_MENU, 
+                         PIN_BTN_DPAD_UP, PIN_BTN_DPAD_DOWN, PIN_BTN_DPAD_LEFT, PIN_BTN_DPAD_RIGHT,
+                         PIN_BTN_RT, PIN_BTN_RB, PIN_BTN_Y, PIN_BTN_B, PIN_BTN_A, PIN_BTN_X,
+                         PIN_RIGHT_JOY_BTN_U, PIN_RIGHT_JOY_BTN_D};
+    for(int pin : pullup_pins) pinMode(pin, INPUT_PULLUP);
+    pinMode(PIN_RIGHT_JOY_BTN_L, INPUT);
+    pinMode(PIN_RIGHT_JOY_BTN_R, INPUT);
 
-    // Setup LED pins
     pinMode(PIN_LED_RED, OUTPUT);
     pinMode(PIN_LED_BLUE, OUTPUT);
-    
-    // USB Mode indicator: Blue DIM, Red OFF
     digitalWrite(PIN_LED_RED, LOW);
     analogWrite(PIN_LED_BLUE, 1);
-
     delay(100);
 
-    // Calibrate joystick center
-    long sumX = 0;
-    long sumY = 0;
-    const int numSamples = 50;
-
-    for (int i = 0; i < numSamples; i++) {
-        sumX += analogRead(PIN_JOY_X);
-        sumY += analogRead(PIN_JOY_Y);
+    long sumLX = 0, sumLY = 0;
+    for (int i = 0; i < 50; i++) {
+        sumLX += analogRead(PIN_LEFT_JOY_X);
+        sumLY += analogRead(PIN_LEFT_JOY_Y);
         delay(5);
     }
-
-    joyCenterX = sumX / numSamples;
-    joyCenterY = sumY / numSamples;
-
-    if (joyCenterX < 1500 || joyCenterX > 2500) joyCenterX = 2048;
-    if (joyCenterY < 1500 || joyCenterY > 2500) joyCenterY = 2048;
-    
-    Serial.println("USB Serial Gamepad Started");
+    leftJoyCenterX = sumLX / 50;
+    leftJoyCenterY = sumLY / 50;
+    if (leftJoyCenterX < 1500 || leftJoyCenterX > 2500) leftJoyCenterX = 2048;
+    if (leftJoyCenterY < 1500 || leftJoyCenterY > 2500) leftJoyCenterY = 2048;
 }
 
 int16_t processBipolarAxis(int rawVal, int centerVal, bool invert, int deadzone) {
@@ -67,9 +69,7 @@ int16_t processBipolarAxis(int rawVal, int centerVal, bool invert, int deadzone)
         centerVal = 4095 - centerVal;
     }
     int diff = rawVal - centerVal;
-    if (abs(diff) <= deadzone) {
-        return 0; // Inside deadzone
-    }
+    if (abs(diff) <= deadzone) return 0;
     if (diff > 0) {
         long mapped = (long)(diff - deadzone) * 32767 / (4095 - centerVal - deadzone);
         return (int16_t)constrain(mapped, 0, 32767);
@@ -84,20 +84,32 @@ void loop() {
     if (currentMillis - lastUpdate >= UPDATE_INTERVAL) {
         lastUpdate = currentMillis;
 
-        int rawX = analogRead(PIN_JOY_X);
-        int rawY = analogRead(PIN_JOY_Y);
+        int rawLX = analogRead(PIN_LEFT_JOY_X);
+        int rawLY = analogRead(PIN_LEFT_JOY_Y);
+        int16_t mappedLX = processBipolarAxis(rawLX, leftJoyCenterX, false, JOY_DEADZONE);
+        int16_t mappedLY = processBipolarAxis(rawLY, leftJoyCenterY, true, JOY_DEADZONE);
 
-        bool stateA = (digitalRead(PIN_BTN_A) == LOW);
-        bool stateB = (digitalRead(PIN_BTN_B) == LOW);
-        bool stateX = (digitalRead(PIN_BTN_X) == LOW);
-        bool stateY = (digitalRead(PIN_BTN_Y) == LOW);
-        bool stateJoyBtn = (digitalRead(PIN_JOY_BTN) == LOW);
+        uint32_t b = 0;
+        if(digitalRead(PIN_BTN_A) == LOW) b |= (1<<0);
+        if(digitalRead(PIN_BTN_B) == LOW) b |= (1<<1);
+        if(digitalRead(PIN_BTN_X) == LOW) b |= (1<<2);
+        if(digitalRead(PIN_BTN_Y) == LOW) b |= (1<<3);
+        if(digitalRead(PIN_BTN_LB) == LOW) b |= (1<<4);
+        if(digitalRead(PIN_BTN_RB) == LOW) b |= (1<<5);
+        if(digitalRead(PIN_BTN_VIEW) == LOW) b |= (1<<6);
+        if(digitalRead(PIN_BTN_GUIDE) == LOW) b |= (1<<7);
+        if(digitalRead(PIN_BTN_MENU) == LOW) b |= (1<<8);
+        if(digitalRead(PIN_BTN_DPAD_UP) == LOW) b |= (1<<9);
+        if(digitalRead(PIN_BTN_DPAD_DOWN) == LOW) b |= (1<<10);
+        if(digitalRead(PIN_BTN_DPAD_LEFT) == LOW) b |= (1<<11);
+        if(digitalRead(PIN_BTN_DPAD_RIGHT) == LOW) b |= (1<<12);
+        if(digitalRead(PIN_RIGHT_JOY_BTN_U) == LOW) b |= (1<<13);
+        if(digitalRead(PIN_RIGHT_JOY_BTN_D) == LOW) b |= (1<<14);
+        if(digitalRead(PIN_RIGHT_JOY_BTN_L) == LOW) b |= (1<<15);
+        if(digitalRead(PIN_RIGHT_JOY_BTN_R) == LOW) b |= (1<<16);
+        if(digitalRead(PIN_BTN_LT) == LOW) b |= (1<<17);
+        if(digitalRead(PIN_BTN_RT) == LOW) b |= (1<<18);
 
-        int16_t mappedX = processBipolarAxis(rawX, joyCenterX, false, JOY_DEADZONE);
-        int16_t mappedY = processBipolarAxis(rawY, joyCenterY, true, JOY_DEADZONE);
-
-        // Print over serial so Python can read it
-        Serial.printf("X:%d,Y:%d,A:%d,B:%d,XBTN:%d,YBTN:%d,JBTN:%d\n",
-                      mappedX, mappedY, stateA, stateB, stateX, stateY, stateJoyBtn);
+        Serial.printf("LX:%d,LY:%d,B:%u\n", mappedLX, mappedLY, b);
     }
 }
